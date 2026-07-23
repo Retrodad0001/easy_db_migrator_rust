@@ -36,14 +36,26 @@ impl Script {
             });
         }
 
-        if filename.len() < 12 || !filename.as_bytes()[..12].is_ascii() {
+        let Some(prefix) = filename.as_bytes().get(..12) else {
+            return Err(Error::InvalidScriptName {
+                filename,
+                reason: "expected 'yyyyMMdd_NNN_name.sql'".to_string(),
+            });
+        };
+        if !prefix.is_ascii() {
             return Err(Error::InvalidScriptName {
                 filename,
                 reason: "expected 'yyyyMMdd_NNN_name.sql'".to_string(),
             });
         }
 
-        if filename.as_bytes()[8] != b'_' {
+        let Some(&separator) = prefix.get(8) else {
+            return Err(Error::InvalidScriptName {
+                filename,
+                reason: "expected 'yyyyMMdd_NNN_name.sql'".to_string(),
+            });
+        };
+        if separator != b'_' {
             return Err(Error::InvalidScriptName {
                 filename,
                 reason: "expected '_' separator after the date part".to_string(),

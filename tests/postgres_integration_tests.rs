@@ -1,3 +1,5 @@
+#![allow(clippy::panic, missing_docs)]
+
 use std::path::PathBuf;
 
 use chrono::{DateTime, TimeZone, Utc};
@@ -116,16 +118,19 @@ async fn postgres_when_nothing_goes_wrong_with_running_the_migrations_on_an_empt
 
     let executed_at = test_datetime(2021, 10, 17, 12, 10, 10);
 
-    let mut migrator =
-        DbMigrator::with_clock(DatabaseKind::Postgresql, FixedClockMock(executed_at));
-    migrator.exclude_scripts(["20211230_001_DoStuffScript.sql".to_string()]);
+    let migrator = DbMigrator::with_clock_mock(
+        FixedClockMock(executed_at),
+        ["20211230_001_DoStuffScript.sql".to_string()],
+    );
 
-    let deleted = migrator.try_delete_database_if_exists(&config).await;
+    let deleted = migrator
+        .try_delete_database_if_exists(DatabaseKind::Postgresql, &config)
+        .await;
     assert!(deleted, "expected DeleteDatabaseIfExistAsync to succeed");
     assert!(logs_contain("DeleteDatabaseIfExistAsync has executed"));
 
     let succeeded = migrator
-        .try_apply_migrations(&config, &CancellationToken::new())
+        .try_apply_migrations(DatabaseKind::Postgresql, &config, &CancellationToken::new())
         .await;
     assert!(succeeded, "expected the migration run to succeed");
 
@@ -136,16 +141,14 @@ async fn postgres_when_nothing_goes_wrong_with_running_the_migrations_on_an_empt
     assert!(logs_contain("migration process executed successfully"));
 
     let rows = test_fetch_tracking_rows(&config).await;
-    assert_eq!(
-        rows.len(),
-        2,
-        "expected exactly 2 tracking rows, got {rows:#?}"
-    );
-    assert_eq!(rows[0].filename, "20211230_002_Script2p.sql");
-    assert_eq!(rows[0].executed_at, executed_at);
-    assert_eq!(rows[0].version, env!("CARGO_PKG_VERSION"));
-    assert_eq!(rows[1].filename, "20211231_001_Script1p.sql");
-    assert_eq!(rows[1].executed_at, executed_at);
+    let [first, second] = rows.as_slice() else {
+        panic!("expected exactly 2 tracking rows, got {rows:#?}");
+    };
+    assert_eq!(first.filename, "20211230_002_Script2p.sql");
+    assert_eq!(first.executed_at, executed_at);
+    assert_eq!(first.version, env!("CARGO_PKG_VERSION"));
+    assert_eq!(second.filename, "20211231_001_Script1p.sql");
+    assert_eq!(second.executed_at, executed_at);
 }
 
 #[cfg(test)]
@@ -175,29 +178,26 @@ async fn postgres_can_skip_scripts_if_they_already_ran_before() {
     let excluded = ["20211230_001_DoStuffScript.sql".to_string()];
 
     let executed_first_time_at = test_datetime(2021, 12, 30, 2, 16, 1);
-    let mut migrator1 = DbMigrator::with_clock(
-        DatabaseKind::Postgresql,
-        FixedClockMock(executed_first_time_at),
-    );
-    migrator1.exclude_scripts(excluded.clone());
+    let migrator1 =
+        DbMigrator::with_clock_mock(FixedClockMock(executed_first_time_at), excluded.clone());
 
-    assert!(migrator1.try_delete_database_if_exists(&config).await);
     assert!(
         migrator1
-            .try_apply_migrations(&config, &CancellationToken::new())
+            .try_delete_database_if_exists(DatabaseKind::Postgresql, &config)
+            .await
+    );
+    assert!(
+        migrator1
+            .try_apply_migrations(DatabaseKind::Postgresql, &config, &CancellationToken::new())
             .await
     );
 
     let executed_second_time_at = test_datetime(2021, 12, 31, 2, 16, 1);
-    let mut migrator2 = DbMigrator::with_clock(
-        DatabaseKind::Postgresql,
-        FixedClockMock(executed_second_time_at),
-    );
-    migrator2.exclude_scripts(excluded);
+    let migrator2 = DbMigrator::with_clock_mock(FixedClockMock(executed_second_time_at), excluded);
 
     assert!(
         migrator2
-            .try_apply_migrations(&config, &CancellationToken::new())
+            .try_apply_migrations(DatabaseKind::Postgresql, &config, &CancellationToken::new())
             .await
     );
 
@@ -210,15 +210,13 @@ async fn postgres_can_skip_scripts_if_they_already_ran_before() {
 
     // the tracking table should not be updated on the second, no-op run
     let rows = test_fetch_tracking_rows(&config).await;
-    assert_eq!(
-        rows.len(),
-        2,
-        "expected exactly 2 tracking rows, got {rows:#?}"
-    );
-    assert_eq!(rows[0].filename, "20211230_002_Script2p.sql");
-    assert_eq!(rows[0].executed_at, executed_first_time_at);
-    assert_eq!(rows[1].filename, "20211231_001_Script1p.sql");
-    assert_eq!(rows[1].executed_at, executed_first_time_at);
+    let [first, second] = rows.as_slice() else {
+        panic!("expected exactly 2 tracking rows, got {rows:#?}");
+    };
+    assert_eq!(first.filename, "20211230_002_Script2p.sql");
+    assert_eq!(first.executed_at, executed_first_time_at);
+    assert_eq!(second.filename, "20211231_001_Script1p.sql");
+    assert_eq!(second.executed_at, executed_first_time_at);
 }
 
 #[cfg(test)]
@@ -246,18 +244,23 @@ async fn postgres_can_cancel_the_migration_process() {
     );
 
     let executed_at = test_datetime(2021, 10, 17, 12, 10, 10);
-    let mut migrator =
-        DbMigrator::with_clock(DatabaseKind::Postgresql, FixedClockMock(executed_at));
-    migrator.exclude_scripts(["20211230_001_DoStuffScript.sql".to_string()]);
+    let migrator = DbMigrator::with_clock_mock(
+        FixedClockMock(executed_at),
+        ["20211230_001_DoStuffScript.sql".to_string()],
+    );
 
     let cancellation_token = CancellationToken::new();
 
-    assert!(migrator.try_delete_database_if_exists(&config).await);
+    assert!(
+        migrator
+            .try_delete_database_if_exists(DatabaseKind::Postgresql, &config)
+            .await
+    );
 
     cancellation_token.cancel();
 
     let succeeded = migrator
-        .try_apply_migrations(&config, &cancellation_token)
+        .try_apply_migrations(DatabaseKind::Postgresql, &config, &cancellation_token)
         .await;
     assert!(
         succeeded,

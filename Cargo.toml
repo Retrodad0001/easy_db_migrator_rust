@@ -3,9 +3,20 @@ name = "easy_db_migrator_rust"
 version = "0.1.0"
 edition = "2024"
 
+[lints.rust]
+missing_docs = "deny"
+unused_must_use = "deny"
+
 [lints.clippy]
 unwrap_used = "deny"
 expect_used = "deny"
+wildcard_enum_match_arm = "deny"
+wildcard_imports = "deny"
+match_wildcard_for_single_variants = "deny"
+panic = "deny"
+unreachable = "deny"
+unimplemented = "deny"
+indexing_slicing = "deny"
 
 [dependencies]
 chrono = "0.4.45"

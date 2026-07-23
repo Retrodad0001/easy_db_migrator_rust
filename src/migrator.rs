@@ -3,7 +3,7 @@ use tracing::{error, info, warn};
 
 use crate::{
     backend::{self, RunMigrationResult},
-    clock::{ClockMock, SystemClock},
+    clock::ClockMock,
     config::MigrationConfiguration,
     database_kind::DatabaseKind,
     script,
@@ -18,40 +18,35 @@ enum RunOutcome {
 /// Runs plain-SQL migration scripts against a database, tracking which ones have
 /// already been applied so that re-running a migration is a true no-op.
 pub struct DbMigrator {
-    kind: DatabaseKind, //TODO not use state in struct but as parameter in funtions, if not possable ask me first
     clock: Box<dyn ClockMock>,
     excluded_scripts: Vec<String>,
 }
 
 impl DbMigrator {
-    /// Creates a migrator for the given [`DatabaseKind`], using the system clock.
-    pub fn new(kind: DatabaseKind) -> Self {
-        Self::with_clock(kind, SystemClock)
-    }
-
-    //TODO integration test should run parallel and every test uses own container
-
-    //TODO only add contructor when mocking is needed like :
-
-    /// Creates a migrator with an injectable [`ClockMock`], primarily for integration
-    /// testing where tracking-table timestamps need to be deterministic.
-    pub fn with_clock(kind: DatabaseKind, clock: impl ClockMock + 'static) -> Self {
+    /// Creates a migrator with an injectable [`ClockMock`] and the script filenames to
+    /// exclude from the next migration run.
+    /// The [`DatabaseKind`] is not stored on the migrator — it's passed explicitly to
+    /// each method that needs to dispatch on it (e.g.
+    /// [`try_delete_database_if_exists`](Self::try_delete_database_if_exists),
+    /// [`try_apply_migrations`](Self::try_apply_migrations)).
+    pub fn with_clock_mock(
+        clock: impl ClockMock + 'static,
+        excluded_scripts: impl IntoIterator<Item = String>,
+    ) -> Self {
         Self {
-            kind,
             clock: Box::new(clock),
-            excluded_scripts: Vec::new(),
+            excluded_scripts: excluded_scripts.into_iter().collect(),
         }
-    }
-
-    /// Excludes the given script filenames from the next migration run.
-    pub fn exclude_scripts(&mut self, filenames: impl IntoIterator<Item = String>) {
-        self.excluded_scripts.extend(filenames);
     }
 
     /// Deletes the configured database if it exists. Use only in non-production
     /// environments, e.g. to reset state before an integration test run.
-    pub async fn try_delete_database_if_exists(&self, config: &MigrationConfiguration) -> bool {
-        let result = match self.kind {
+    pub async fn try_delete_database_if_exists(
+        &self,
+        kind: DatabaseKind,
+        config: &MigrationConfiguration,
+    ) -> bool {
+        let result = match kind {
             DatabaseKind::Postgresql => {
                 backend::postgres::try_delete_database_if_exists(config).await
             }
@@ -77,6 +72,7 @@ impl DbMigrator {
     /// — cancellation is not treated as failure.
     pub async fn try_apply_migrations(
         &self,
+        kind: DatabaseKind,
         config: &MigrationConfiguration,
         cancellation_token: &CancellationToken,
     ) -> bool {
@@ -94,7 +90,7 @@ impl DbMigrator {
             "connection-string used"
         );
 
-        let create_database_result = match self.kind {
+        let create_database_result = match kind {
             DatabaseKind::Postgresql => {
                 backend::postgres::try_create_database_if_missing(config).await
             }
@@ -107,7 +103,7 @@ impl DbMigrator {
         }
         info!("setup database executed successfully");
 
-        let tracking_table_result = match self.kind {
+        let tracking_table_result = match kind {
             DatabaseKind::Postgresql => backend::postgres::try_ensure_tracking_table(config).await,
             DatabaseKind::Mssql => backend::mssql::try_ensure_tracking_table(config).await,
         };
@@ -131,7 +127,7 @@ impl DbMigrator {
         };
 
         match self
-            .run_migration_scripts(config, &scripts, cancellation_token)
+            .run_migration_scripts(kind, config, &scripts, cancellation_token)
             .await
         {
             RunOutcome::Cancelled => true,
@@ -152,6 +148,7 @@ impl DbMigrator {
 
     async fn run_migration_scripts(
         &self,
+        kind: DatabaseKind,
         config: &MigrationConfiguration,
         scripts: &[Script],
         cancellation_token: &CancellationToken,
@@ -168,7 +165,7 @@ impl DbMigrator {
             }
 
             let executed_at = self.clock.now_utc();
-            let result = match self.kind {
+            let result = match kind {
                 DatabaseKind::Postgresql => {
                     backend::postgres::run_script(config, script, executed_at, cancellation_token)
                         .await
