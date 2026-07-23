@@ -1,7 +1,20 @@
 [package]
 name = "easy_db_migrator_rust"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
+description = "A lightweight, plain-SQL database migration library for PostgreSQL and SQL Server."
+license = "MIT"
+repository = "https://github.com/Retrodad0001/easy_db_migrator_rust"
+readme = "README.md"
+keywords = ["migration", "database", "postgres", "sqlserver", "sql"]
+categories = ["database"]
+publish = false
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
 
 [lints.rust]
 missing_docs = "deny"

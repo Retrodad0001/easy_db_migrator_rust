@@ -51,6 +51,7 @@ Derived from `D:\src\EasyDbMigrator`'s integration tests (`PostgresServerIntegra
 - **Integration tests:** require a running Docker daemon (see Architecture rules — real containers via `testcontainers`). Run `cargo test` — both backends' integration tests run in the same invocation now that both are always compiled in. If Docker isn't available in the current environment, say so explicitly rather than reporting tests as passing — never assume/claim integration coverage without actually running it.
 - Don't report a task done based on a build/compile check alone — actually run the relevant test command(s) above and confirm they pass.
 - **Untested code must be flagged.** Any new or changed code path that no test actually exercises (e.g. integration tests that only compile-checked because Docker wasn't available, an error branch nothing triggers, a fixture that was never run against) must be called out explicitly to the user as untested — don't let compiling or "looks correct" stand in for having run it.
+- **CI workflows must be linted.** Any change to a file under `.github/workflows/` must be checked with `actionlint` before considering the change done — run it via `docker run --rm -v "$(pwd):/repo" -w /repo rhysd/actionlint:latest` (no local install needed since Docker is already required for integration tests) and confirm it exits clean.
 
 ## Agent rules
 
