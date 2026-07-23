@@ -65,6 +65,49 @@ fn test_datetime(
     )
 }
 
+async fn test_database_exists(config: &MigrationConfiguration) -> bool {
+    let admin_url = format!(
+        "{}/postgres",
+        config.connection_string().trim_end_matches('/')
+    );
+    let mut connection = test_expect_ok(
+        PgConnection::connect(&admin_url).await,
+        "failed to connect to maintenance database for verification",
+    );
+
+    let exists: Option<i32> = test_expect_ok(
+        sqlx::query_scalar("SELECT 1 FROM pg_database WHERE datname = $1")
+            .bind(config.database_name())
+            .fetch_optional(&mut connection)
+            .await,
+        "failed to check database existence",
+    );
+
+    exists.is_some()
+}
+
+async fn test_table_exists(config: &MigrationConfiguration, table_name: &str) -> bool {
+    let url = format!(
+        "{}/{}",
+        config.connection_string().trim_end_matches('/'),
+        config.database_name()
+    );
+    let mut connection = test_expect_ok(
+        PgConnection::connect(&url).await,
+        "failed to connect for verification",
+    );
+
+    let regclass: Option<String> = test_expect_ok(
+        sqlx::query_scalar("SELECT to_regclass($1)::text")
+            .bind(table_name)
+            .fetch_one(&mut connection)
+            .await,
+        "failed to check table existence",
+    );
+
+    regclass.is_some()
+}
+
 async fn test_fetch_tracking_rows(config: &MigrationConfiguration) -> Vec<TrackingRow> {
     let url = format!(
         "{}/{}",
@@ -149,6 +192,19 @@ async fn postgres_when_nothing_goes_wrong_with_running_the_migrations_on_an_empt
     assert_eq!(first.version, env!("CARGO_PKG_VERSION"));
     assert_eq!(second.filename, "20211231_001_Script1p.sql");
     assert_eq!(second.executed_at, executed_at);
+
+    assert!(
+        test_table_exists(&config, "customers").await,
+        "expected customers table to have been created by 20211230_002_Script2p.sql"
+    );
+    assert!(
+        test_table_exists(&config, "distributors").await,
+        "expected distributors table to have been created by 20211231_001_Script1p.sql"
+    );
+    assert!(
+        !test_table_exists(&config, "schools").await,
+        "expected schools table to not exist since 20211230_001_DoStuffScript.sql was excluded"
+    );
 }
 
 #[cfg(test)]
@@ -217,6 +273,19 @@ async fn postgres_can_skip_scripts_if_they_already_ran_before() {
     assert_eq!(first.executed_at, executed_first_time_at);
     assert_eq!(second.filename, "20211231_001_Script1p.sql");
     assert_eq!(second.executed_at, executed_first_time_at);
+
+    assert!(
+        test_table_exists(&config, "customers").await,
+        "expected customers table to have been created by 20211230_002_Script2p.sql"
+    );
+    assert!(
+        test_table_exists(&config, "distributors").await,
+        "expected distributors table to have been created by 20211231_001_Script1p.sql"
+    );
+    assert!(
+        !test_table_exists(&config, "schools").await,
+        "expected schools table to not exist since 20211230_001_DoStuffScript.sql was excluded"
+    );
 }
 
 #[cfg(test)]
@@ -270,4 +339,9 @@ async fn postgres_can_cancel_the_migration_process() {
     assert!(logs_contain(
         "migration process was canceled from the outside"
     ));
+
+    assert!(
+        !test_database_exists(&config).await,
+        "expected database to not have been created since migration was cancelled before any setup ran"
+    );
 }

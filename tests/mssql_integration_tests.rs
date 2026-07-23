@@ -70,6 +70,75 @@ fn test_datetime(
     )
 }
 
+async fn test_database_exists(config: &MigrationConfiguration) -> bool {
+    let tds_config = test_expect_ok(
+        Config::from_ado_string(config.connection_string()),
+        "invalid ado connection string",
+    );
+
+    let tcp = test_expect_ok(
+        TcpStream::connect(tds_config.get_addr()).await,
+        "failed to connect for verification",
+    );
+    let mut client = test_expect_ok(
+        Client::connect(tds_config, tcp.compat_write()).await,
+        "failed to establish tds connection for verification",
+    );
+
+    let database_name = config.database_name();
+    let row = test_expect_ok(
+        test_expect_ok(
+            client
+                .query(
+                    "SELECT 1 FROM sys.databases WHERE name = @P1",
+                    &[&database_name],
+                )
+                .await,
+            "failed to check database existence",
+        )
+        .into_row()
+        .await,
+        "failed to collect database-existence row",
+    );
+
+    row.is_some()
+}
+
+async fn test_table_exists(config: &MigrationConfiguration, table_name: &str) -> bool {
+    let mut tds_config = test_expect_ok(
+        Config::from_ado_string(config.connection_string()),
+        "invalid ado connection string",
+    );
+
+    tds_config.database(config.database_name());
+
+    let tcp = test_expect_ok(
+        TcpStream::connect(tds_config.get_addr()).await,
+        "failed to connect for verification",
+    );
+    let mut client = test_expect_ok(
+        Client::connect(tds_config, tcp.compat_write()).await,
+        "failed to establish tds connection for verification",
+    );
+
+    let row = test_expect_ok(
+        test_expect_ok(
+            client
+                .query(
+                    "SELECT 1 FROM sysobjects WHERE name = @P1 AND xtype = 'U'",
+                    &[&table_name],
+                )
+                .await,
+            "failed to check table existence",
+        )
+        .into_row()
+        .await,
+        "failed to collect table-existence row",
+    );
+
+    row.is_some()
+}
+
 async fn test_fetch_tracking_rows(config: &MigrationConfiguration) -> Vec<TrackingRow> {
     let mut tds_config = test_expect_ok(
         Config::from_ado_string(config.connection_string()),
@@ -188,6 +257,19 @@ async fn mssql_when_nothing_goes_wrong_with_running_the_migrations_on_an_empty_d
     assert_eq!(first.version, env!("CARGO_PKG_VERSION"));
     assert_eq!(second.filename, "20211231_001_Script1.sql");
     assert_eq!(second.executed_at, executed_at);
+
+    assert!(
+        test_table_exists(&config, "bb").await,
+        "expected table bb to have been created by 20211230_002_Script2.sql"
+    );
+    assert!(
+        test_table_exists(&config, "aa").await,
+        "expected table aa to have been created by 20211231_001_Script1.sql"
+    );
+    assert!(
+        !test_table_exists(&config, "placeholder").await,
+        "expected table placeholder to not exist since 20211230_001_CreateDB.sql was excluded"
+    );
 }
 
 #[cfg(test)]
@@ -247,6 +329,19 @@ async fn mssql_can_skip_scripts_if_they_already_ran_before() {
     assert_eq!(first.executed_at, executed_first_time_at);
     assert_eq!(second.filename, "20211231_001_Script1.sql");
     assert_eq!(second.executed_at, executed_first_time_at);
+
+    assert!(
+        test_table_exists(&config, "bb").await,
+        "expected table bb to have been created by 20211230_002_Script2.sql"
+    );
+    assert!(
+        test_table_exists(&config, "aa").await,
+        "expected table aa to have been created by 20211231_001_Script1.sql"
+    );
+    assert!(
+        !test_table_exists(&config, "placeholder").await,
+        "expected table placeholder to not exist since 20211230_001_CreateDB.sql was excluded"
+    );
 }
 
 #[cfg(test)]
@@ -291,4 +386,9 @@ async fn mssql_can_cancel_the_migration_process() {
     assert!(logs_contain(
         "migration process was canceled from the outside"
     ));
+
+    assert!(
+        !test_database_exists(&config).await,
+        "expected database to not have been created since migration was cancelled before any setup ran"
+    );
 }
