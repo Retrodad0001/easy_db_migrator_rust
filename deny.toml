@@ -1,0 +1,75 @@
+# cargo-deny configuration.
+# Run with: cargo deny check
+# Docs: https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+targets = []
+all-features = false
+no-default-features = false
+
+[output]
+feature-depth = 1
+
+# https://embarkstudios.github.io/cargo-deny/checks/advisories/cfg.html
+[advisories]
+ignore = []
+
+# https://embarkstudios.github.io/cargo-deny/checks/licenses/cfg.html
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+]
+confidence-threshold = 0.8
+exceptions = []
+
+[licenses.private]
+ignore = false
+registries = []
+
+# https://embarkstudios.github.io/cargo-deny/checks/bans/cfg.html
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+highlight = "all"
+workspace-default-features = "allow"
+external-default-features = "allow"
+allow = []
+allow-workspace = false
+deny = []
+# Known duplicate-version pairs as of writing, from transitive deps of sqlx/tiberius/testcontainers
+# straddling two major-version generations. The older version in each pair is skipped so the
+# newer one is the sole counted version. Revisit (re-run `cargo deny check`) after `cargo update`
+# bumps any of these, since a shifted version can reintroduce or resolve the duplicate.
+skip = [
+    { crate = "block-buffer@0.10.4", reason = "sqlx-core 0.9 -> sha2 0.10 -> digest 0.10; newer digest 0.11 chain pulls block-buffer 0.12.1" },
+    { crate = "cpufeatures@0.2.17", reason = "sqlx-core 0.9 -> sha2 0.10; sqlx-postgres's sha2 0.11 chain pulls cpufeatures 0.3.0" },
+    { crate = "crypto-common@0.1.6", reason = "sqlx-core 0.9 -> sha2 0.10 -> digest 0.10; newer digest 0.11 chain pulls crypto-common 0.2.2" },
+    { crate = "digest@0.10.7", reason = "sqlx-core 0.9 -> sha2 0.10; sqlx-postgres's hmac/md-5/sha2 0.11 chain pulls digest 0.11.3" },
+    { crate = "getrandom@0.2.17", reason = "ring (via rustls, used by testcontainers/bollard) depends on getrandom 0.2; rand 0.9/0.10 chains pull 0.3.4/0.4.3" },
+    { crate = "getrandom@0.3.4", reason = "rand 0.9 (via bollard) depends on getrandom 0.3; rand 0.10 (via testcontainers/sqlx-postgres) pulls getrandom 0.4.3" },
+    { crate = "hashbrown@0.16.1", reason = "sqlx-core 0.9 -> hashlink depends on hashbrown 0.16; indexmap (via h2/tower, used by tonic/bollard) pulls hashbrown 0.17.1" },
+    { crate = "r-efi@5.3.0", reason = "getrandom 0.3.4 (via rand 0.9/tempfile) depends on r-efi 5.3; getrandom 0.4.3 (via rand 0.10) pulls r-efi 6.0.0" },
+    { crate = "sha2@0.10.9", reason = "sqlx-core 0.9 depends on sha2 0.10 directly; sqlx-postgres depends on sha2 0.11.0" },
+    { crate = "syn@2.0.119", reason = "several proc-macro crates in the tonic/bollard chain still depend on syn 2; others have moved to syn 3.0.3" },
+    { crate = "thiserror@1.0.69", reason = "tiberius and async-native-tls depend on thiserror 1; this crate and the sqlx/bollard/testcontainers chain use thiserror 2.0.19" },
+    { crate = "thiserror-impl@1.0.69", reason = "paired proc-macro crate for thiserror@1.0.69, see that entry" },
+    { crate = "windows-sys@0.52.0", reason = "ring/tempfile (via rustls/native-tls) depend on windows-sys 0.52; the tokio/rustix chain used by testcontainers pulls windows-sys 0.61.2" },
+]
+skip-tree = []
+
+# https://embarkstudios.github.io/cargo-deny/checks/sources/cfg.html
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
+
+[sources.allow-org]
+github = []
+gitlab = []
+bitbucket = []
