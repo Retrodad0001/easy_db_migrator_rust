@@ -17,8 +17,6 @@ use tracing_test::traced_test;
 
 const SA_PASSWORD: &str = "yourStrong(!)Password";
 
-//TODO no comments in the code
-
 struct FixedClockMock(DateTime<Utc>);
 
 impl ClockMock for FixedClockMock {
@@ -256,7 +254,7 @@ async fn test_start_mssql() -> (ContainerAsync<MssqlServer>, String) {
 #[cfg(test)]
 #[tokio::test]
 #[traced_test]
-async fn mssql_when_nothing_goes_wrong_with_running_the_migrations_on_an_empty_database() {
+async fn when_nothing_goes_wrong_with_running_the_migrations_on_an_empty_database() {
     let (_container, connection_string) = test_start_mssql().await;
 
     let config = test_expect_ok(
@@ -318,7 +316,7 @@ async fn mssql_when_nothing_goes_wrong_with_running_the_migrations_on_an_empty_d
 #[cfg(test)]
 #[tokio::test]
 #[traced_test]
-async fn mssql_can_skip_scripts_if_they_already_ran_before() {
+async fn can_skip_scripts_if_they_already_ran_before() {
     let (_container, connection_string) = test_start_mssql().await;
 
     let config = test_expect_ok(
@@ -389,7 +387,7 @@ async fn mssql_can_skip_scripts_if_they_already_ran_before() {
 #[cfg(test)]
 #[tokio::test]
 #[traced_test]
-async fn mssql_can_cancel_the_migration_process() {
+async fn can_cancel_the_migration_process() {
     let (_container, connection_string) = test_start_mssql().await;
 
     let config = test_expect_ok(
@@ -438,7 +436,7 @@ async fn mssql_can_cancel_the_migration_process() {
 #[cfg(test)]
 #[tokio::test]
 #[traced_test]
-async fn mssql_reports_failure_when_a_script_fails_and_stops_running_later_scripts() {
+async fn reports_failure_when_a_script_fails_and_stops_running_later_scripts() {
     let (_container, connection_string) = test_start_mssql().await;
 
     let config = test_expect_ok(
@@ -492,7 +490,7 @@ async fn mssql_reports_failure_when_a_script_fails_and_stops_running_later_scrip
 #[cfg(test)]
 #[tokio::test]
 #[traced_test]
-async fn mssql_reports_failure_and_runs_nothing_when_the_connection_string_is_empty() {
+async fn reports_failure_and_runs_nothing_when_the_connection_string_is_empty() {
     let (_container, connection_string) = test_start_mssql().await;
     let database_name = test_get_random_database_name();
 

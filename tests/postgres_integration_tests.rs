@@ -165,7 +165,7 @@ async fn test_fetch_tracking_rows(config: &MigrationConfiguration) -> Vec<Tracki
 #[cfg(test)]
 #[tokio::test]
 #[traced_test]
-async fn postgres_when_nothing_goes_wrong_with_running_the_migrations_on_an_empty_database() {
+async fn when_nothing_goes_wrong_with_running_the_migrations_on_an_empty_database() {
     let container = test_expect_ok(
         Postgres::default().start().await,
         "failed to start postgres container",
@@ -237,7 +237,7 @@ async fn postgres_when_nothing_goes_wrong_with_running_the_migrations_on_an_empt
 #[cfg(test)]
 #[tokio::test]
 #[traced_test]
-async fn postgres_can_skip_scripts_if_they_already_ran_before() {
+async fn can_skip_scripts_if_they_already_ran_before() {
     let container = test_expect_ok(
         Postgres::default().start().await,
         "failed to start postgres container",
@@ -317,7 +317,7 @@ async fn postgres_can_skip_scripts_if_they_already_ran_before() {
 #[cfg(test)]
 #[tokio::test]
 #[traced_test]
-async fn postgres_can_cancel_the_migration_process() {
+async fn can_cancel_the_migration_process() {
     let container = test_expect_ok(
         Postgres::default().start().await,
         "failed to start postgres container",
@@ -375,7 +375,7 @@ async fn postgres_can_cancel_the_migration_process() {
 #[cfg(test)]
 #[tokio::test]
 #[traced_test]
-async fn postgres_reports_failure_when_a_script_fails_and_stops_running_later_scripts() {
+async fn reports_failure_when_a_script_fails_and_stops_running_later_scripts() {
     let container = test_expect_ok(
         Postgres::default().start().await,
         "failed to start postgres container",
@@ -438,7 +438,7 @@ async fn postgres_reports_failure_when_a_script_fails_and_stops_running_later_sc
 #[cfg(test)]
 #[tokio::test]
 #[traced_test]
-async fn postgres_reports_failure_and_runs_nothing_when_the_connection_string_is_empty() {
+async fn reports_failure_and_runs_nothing_when_the_connection_string_is_empty() {
     let container = test_expect_ok(
         Postgres::default().start().await,
         "failed to start postgres container",
