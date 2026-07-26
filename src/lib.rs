@@ -1,8 +1,4 @@
 //! Database migration library for PostgreSQL and SQL Server.
-//!
-//! Migrations are forward-only: scripts are ordered by the date and sequence number
-//! encoded in their filename (`yyyyMMdd_NNN_name.sql`), executed once, and recorded in
-//! a `DbMigrationsRun` tracking table so that re-running a migration is a no-op.
 
 mod backend;
 mod clock;

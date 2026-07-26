@@ -17,6 +17,8 @@ use tracing_test::traced_test;
 
 const SA_PASSWORD: &str = "yourStrong(!)Password";
 
+//TODO no comments in the code
+
 struct FixedClockMock(DateTime<Utc>);
 
 impl ClockMock for FixedClockMock {
@@ -47,7 +49,11 @@ fn test_expect_some_value<T>(value: Option<T>, context: &str) -> T {
 }
 
 fn test_fixtures_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/test_scripts_mssql")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mssql/test_scripts")
+}
+
+fn test_failure_fixtures_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mssql/test_scripts_failure")
 }
 
 fn test_get_random_database_name() -> String {
@@ -137,6 +143,43 @@ async fn test_table_exists(config: &MigrationConfiguration, table_name: &str) ->
     );
 
     row.is_some()
+}
+
+async fn test_user_table_names(config: &MigrationConfiguration) -> Vec<String> {
+    let mut tds_config = test_expect_ok(
+        Config::from_ado_string(config.connection_string()),
+        "invalid ado connection string",
+    );
+
+    tds_config.database(config.database_name());
+
+    let tcp = test_expect_ok(
+        TcpStream::connect(tds_config.get_addr()).await,
+        "failed to connect for verification",
+    );
+    let mut client = test_expect_ok(
+        Client::connect(tds_config, tcp.compat_write()).await,
+        "failed to establish tds connection for verification",
+    );
+
+    let rows = test_expect_ok(
+        test_expect_ok(
+            client
+                .query("SELECT name FROM sys.tables ORDER BY name", &[])
+                .await,
+            "failed to list user tables",
+        )
+        .into_first_result()
+        .await,
+        "failed to collect user table rows",
+    );
+
+    let mut names = Vec::with_capacity(rows.len());
+    for row in rows {
+        let name: &str = test_expect_some_value(row.get("name"), "missing name column");
+        names.push(name.to_string());
+    }
+    names
 }
 
 async fn test_fetch_tracking_rows(config: &MigrationConfiguration) -> Vec<TrackingRow> {
@@ -320,7 +363,6 @@ async fn mssql_can_skip_scripts_if_they_already_ran_before() {
     ));
     assert!(logs_contain("migration process executed successfully"));
 
-    // the tracking table should not be updated on the second, no-op run
     let rows = test_fetch_tracking_rows(&config).await;
     let [first, second] = rows.as_slice() else {
         panic!("expected exactly 2 tracking rows, got {rows:#?}");
@@ -390,5 +432,111 @@ async fn mssql_can_cancel_the_migration_process() {
     assert!(
         !test_database_exists(&config).await,
         "expected database to not have been created since migration was cancelled before any setup ran"
+    );
+}
+
+#[cfg(test)]
+#[tokio::test]
+#[traced_test]
+async fn mssql_reports_failure_when_a_script_fails_and_stops_running_later_scripts() {
+    let (_container, connection_string) = test_start_mssql().await;
+
+    let config = test_expect_ok(
+        MigrationConfiguration::new(
+            connection_string,
+            test_get_random_database_name(),
+            test_failure_fixtures_dir(),
+        ),
+        "invalid migration configuration",
+    );
+
+    let executed_at = test_datetime(2021, 10, 17, 12, 10, 10);
+    let migrator = DbMigrator::with_clock_mock(FixedClockMock(executed_at), Vec::<String>::new());
+
+    assert!(
+        migrator
+            .try_delete_database_if_exists(DatabaseKind::Mssql, &config)
+            .await
+    );
+
+    let has_succeeded = migrator
+        .try_apply_migrations(DatabaseKind::Mssql, &config, &CancellationToken::new())
+        .await;
+    assert!(
+        !has_succeeded,
+        "expected the migration run to report failure when a script fails"
+    );
+
+    assert!(logs_contain("script was not completed due to exception"));
+    assert!(logs_contain(
+        "script was skipped due to exception in previous script"
+    ));
+    assert!(logs_contain("migration process executed with errors"));
+
+    let rows = test_fetch_tracking_rows(&config).await;
+    let [only] = rows.as_slice() else {
+        panic!("expected exactly 1 tracking row for the one script that succeeded, got {rows:#?}");
+    };
+    assert_eq!(only.filename, "20220101_001_GoodScript.sql");
+    assert_eq!(only.executed_at, executed_at);
+    assert_eq!(only.version, env!("CARGO_PKG_VERSION"));
+
+    let tables = test_user_table_names(&config).await;
+    assert_eq!(
+        tables,
+        vec!["DbMigrationsRun".to_string(), "goodtable".to_string()],
+        "expected exactly the tracking table and goodtable to exist — the broken script created nothing and the skipped script must not have run"
+    );
+}
+
+#[cfg(test)]
+#[tokio::test]
+#[traced_test]
+async fn mssql_reports_failure_and_runs_nothing_when_the_connection_string_is_empty() {
+    let (_container, connection_string) = test_start_mssql().await;
+    let database_name = test_get_random_database_name();
+
+    let verification_config = test_expect_ok(
+        MigrationConfiguration::new(
+            connection_string,
+            database_name.clone(),
+            test_fixtures_dir(),
+        ),
+        "invalid verification configuration",
+    );
+
+    let empty_connection_config = test_expect_ok(
+        MigrationConfiguration::new("   ", database_name, test_fixtures_dir()),
+        "invalid migration configuration",
+    );
+
+    let executed_at = test_datetime(2021, 10, 17, 12, 10, 10);
+    let migrator = DbMigrator::with_clock_mock(FixedClockMock(executed_at), Vec::<String>::new());
+
+    let has_succeeded = migrator
+        .try_apply_migrations(
+            DatabaseKind::Mssql,
+            &empty_connection_config,
+            &CancellationToken::new(),
+        )
+        .await;
+    assert!(
+        !has_succeeded,
+        "expected an empty connection string to report failure"
+    );
+
+    assert!(logs_contain("empty connectionstring is not valid"));
+    assert!(
+        !logs_contain("setup database executed successfully"),
+        "expected no database setup to run for an empty connection string"
+    );
+    assert!(
+        !logs_contain("script was run"),
+        "expected no script to run for an empty connection string"
+    );
+
+    assert!(
+        !test_database_exists(&verification_config).await,
+        "expected the target database to not have been created since the run stopped on the empty connection string"
     );
 }

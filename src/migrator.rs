@@ -25,10 +25,6 @@ pub struct DbMigrator {
 impl DbMigrator {
     /// Creates a migrator with an injectable [`ClockMock`] and the script filenames to
     /// exclude from the next migration run.
-    /// The [`DatabaseKind`] is not stored on the migrator — it's passed explicitly to
-    /// each method that needs to dispatch on it (e.g.
-    /// [`try_delete_database_if_exists`](Self::try_delete_database_if_exists),
-    /// [`try_apply_migrations`](Self::try_apply_migrations)).
     pub fn with_clock_mock(
         clock: impl ClockMock + 'static,
         excluded_scripts: impl IntoIterator<Item = String>,
@@ -39,8 +35,7 @@ impl DbMigrator {
         }
     }
 
-    /// Deletes the configured database if it exists. Use only in non-production
-    /// environments, e.g. to reset state before an integration test run.
+    /// Deletes the configured database if it exists.
     pub async fn try_delete_database_if_exists(
         &self,
         kind: DatabaseKind,
@@ -67,9 +62,6 @@ impl DbMigrator {
 
     /// Runs all pending migration scripts found in `config`'s scripts directory,
     /// creating the database and tracking table first if needed.
-    ///
-    /// A run cancelled before or during execution logs a warning and returns `true`
-    /// — cancellation is not treated as failure.
     pub async fn try_apply_migrations(
         &self,
         kind: DatabaseKind,
@@ -79,6 +71,11 @@ impl DbMigrator {
         if cancellation_token.is_cancelled() {
             warn!("migration process was canceled from the outside");
             return true;
+        }
+
+        if config.connection_string().trim().is_empty() {
+            error!("empty connectionstring is not valid");
+            return false;
         }
 
         info!(
@@ -202,3 +199,8 @@ impl DbMigrator {
         }
     }
 }
+
+//TODO fill readme
+//TODO add text github and some keyworld like in toml
+//TODO Add demo console or check code api and add other test not happy path
+//TODO Add action codeQL when public repo

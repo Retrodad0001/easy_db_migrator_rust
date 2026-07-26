@@ -6,7 +6,7 @@ description = "A lightweight, plain-SQL database migration library for PostgreSQ
 license = "MIT"
 repository = "https://github.com/Retrodad0001/easy_db_migrator_rust"
 readme = "README.md"
-keywords = ["migration", "database", "postgres", "sqlserver", "sql"]
+keywords = ["migration", "database", "postgres", "sqlserver", "sql", "Rust", "rust-lang"]
 categories = ["database"]
 publish = false
 

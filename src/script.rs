@@ -5,9 +5,6 @@ use chrono::NaiveDate;
 use crate::error::Error;
 
 /// A single migration script loaded from disk.
-///
-/// Ordering comes from the filename (`yyyyMMdd_NNN_name.sql`), by date first, then
-/// by sequence number — never from directory listing order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Script {
     filename: String,

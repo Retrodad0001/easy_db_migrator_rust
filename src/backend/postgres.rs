@@ -9,8 +9,6 @@ use crate::{
 
 const TRACKING_TABLE: &str = "DbMigrationsRun";
 
-/// The connection string in [`MigrationConfiguration`] selects no database;
-/// administrative operations connect to the `postgres` maintenance database instead.
 async fn connect_admin(config: &MigrationConfiguration) -> Result<PgConnection, Error> {
     let url = with_database(config.connection_string(), "postgres");
     Ok(PgConnection::connect(&url).await?)
@@ -28,10 +26,6 @@ fn with_database(base_connection_string: &str, database_name: &str) -> String {
     )
 }
 
-/// Quotes a Postgres identifier for safe interpolation into DDL, which cannot be
-/// parameterized via bind arguments. `database_name` is already validated by
-/// [`MigrationConfiguration`] to be a single word; embedded quotes are still escaped
-/// defensively by doubling them, per Postgres's quoted-identifier rules.
 fn quote_identifier(identifier: &str) -> String {
     format!("\"{}\"", identifier.replace('"', "\"\""))
 }
@@ -86,8 +80,6 @@ pub(crate) async fn try_ensure_tracking_table(
     Ok(())
 }
 
-/// Runs a single migration script and records it in the tracking table, unless
-/// it was already run before or the cancellation token has been set.
 pub(crate) async fn run_script(
     config: &MigrationConfiguration,
     script: &Script,

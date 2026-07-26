@@ -4,10 +4,6 @@ use crate::error::Error;
 
 /// The configuration used to run a migration: how to connect, which database to
 /// target, and where the migration scripts live.
-///
-/// The connection string must not select a database — the migrator needs to be able
-/// to create or drop the database named by [`database_name`](MigrationConfiguration::database_name)
-/// itself before connecting to it.
 #[derive(Debug, Clone)]
 pub struct MigrationConfiguration {
     connection_string: String,
@@ -16,7 +12,7 @@ pub struct MigrationConfiguration {
 }
 
 impl MigrationConfiguration {
-    /// Builds a new configuration, validating the connection string and database name.
+    /// Builds a new configuration, validating the database name.
     pub fn new(
         connection_string: impl Into<String>,
         database_name: impl Into<String>,
@@ -24,12 +20,6 @@ impl MigrationConfiguration {
     ) -> Result<Self, Error> {
         let connection_string = connection_string.into();
         let database_name = database_name.into();
-
-        if connection_string.trim().is_empty() {
-            return Err(Error::InvalidConfig(
-                "connection_string cannot be empty or whitespace".to_string(),
-            ));
-        }
 
         if database_name.trim().is_empty() {
             return Err(Error::InvalidConfig(

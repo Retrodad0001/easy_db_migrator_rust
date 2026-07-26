@@ -42,7 +42,11 @@ fn test_expect_some<T>(value: Option<T>, context: &str) -> T {
 }
 
 fn test_fixtures_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/test_scripts_postgres")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/postgres/test_scripts")
+}
+
+fn test_failure_fixtures_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/postgres/test_scripts_failure")
 }
 
 fn test_random_database_name() -> String {
@@ -106,6 +110,29 @@ async fn test_table_exists(config: &MigrationConfiguration, table_name: &str) ->
     );
 
     regclass.is_some()
+}
+
+async fn test_user_table_names(config: &MigrationConfiguration) -> Vec<String> {
+    let url = format!(
+        "{}/{}",
+        config.connection_string().trim_end_matches('/'),
+        config.database_name()
+    );
+    let mut connection = test_expect_ok(
+        PgConnection::connect(&url).await,
+        "failed to connect for verification",
+    );
+
+    let rows = test_expect_ok(
+        sqlx::query(
+            "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'public' ORDER BY tablename",
+        )
+        .fetch_all(&mut connection)
+        .await,
+        "failed to list user tables",
+    );
+
+    rows.into_iter().map(|row| row.get("tablename")).collect()
 }
 
 async fn test_fetch_tracking_rows(config: &MigrationConfiguration) -> Vec<TrackingRow> {
@@ -264,7 +291,6 @@ async fn postgres_can_skip_scripts_if_they_already_ran_before() {
     ));
     assert!(logs_contain("migration process executed successfully"));
 
-    // the tracking table should not be updated on the second, no-op run
     let rows = test_fetch_tracking_rows(&config).await;
     let [first, second] = rows.as_slice() else {
         panic!("expected exactly 2 tracking rows, got {rows:#?}");
@@ -343,5 +369,129 @@ async fn postgres_can_cancel_the_migration_process() {
     assert!(
         !test_database_exists(&config).await,
         "expected database to not have been created since migration was cancelled before any setup ran"
+    );
+}
+
+#[cfg(test)]
+#[tokio::test]
+#[traced_test]
+async fn postgres_reports_failure_when_a_script_fails_and_stops_running_later_scripts() {
+    let container = test_expect_ok(
+        Postgres::default().start().await,
+        "failed to start postgres container",
+    );
+    let host = test_expect_ok(container.get_host().await, "failed to get host");
+    let port = test_expect_ok(
+        container.get_host_port_ipv4(5432).await,
+        "failed to get port",
+    );
+    let base_connection_string = format!("postgres://postgres:postgres@{host}:{port}");
+
+    let config = test_expect_ok(
+        MigrationConfiguration::new(
+            base_connection_string,
+            test_random_database_name(),
+            test_failure_fixtures_dir(),
+        ),
+        "invalid migration configuration",
+    );
+
+    let executed_at = test_datetime(2021, 10, 17, 12, 10, 10);
+    let migrator = DbMigrator::with_clock_mock(FixedClockMock(executed_at), Vec::<String>::new());
+
+    assert!(
+        migrator
+            .try_delete_database_if_exists(DatabaseKind::Postgresql, &config)
+            .await
+    );
+
+    let succeeded = migrator
+        .try_apply_migrations(DatabaseKind::Postgresql, &config, &CancellationToken::new())
+        .await;
+    assert!(
+        !succeeded,
+        "expected the migration run to report failure when a script fails"
+    );
+
+    assert!(logs_contain("script was not completed due to exception"));
+    assert!(logs_contain(
+        "script was skipped due to exception in previous script"
+    ));
+    assert!(logs_contain("migration process executed with errors"));
+
+    let rows = test_fetch_tracking_rows(&config).await;
+    let [only] = rows.as_slice() else {
+        panic!("expected exactly 1 tracking row for the one script that succeeded, got {rows:#?}");
+    };
+    assert_eq!(only.filename, "20220101_001_GoodScriptp.sql");
+    assert_eq!(only.executed_at, executed_at);
+    assert_eq!(only.version, env!("CARGO_PKG_VERSION"));
+
+    let tables = test_user_table_names(&config).await;
+    assert_eq!(
+        tables,
+        vec!["dbmigrationsrun".to_string(), "good_table".to_string()],
+        "expected exactly the tracking table and good_table to exist — the broken script created nothing and the skipped script must not have run"
+    );
+}
+
+#[cfg(test)]
+#[tokio::test]
+#[traced_test]
+async fn postgres_reports_failure_and_runs_nothing_when_the_connection_string_is_empty() {
+    let container = test_expect_ok(
+        Postgres::default().start().await,
+        "failed to start postgres container",
+    );
+    let host = test_expect_ok(container.get_host().await, "failed to get host");
+    let port = test_expect_ok(
+        container.get_host_port_ipv4(5432).await,
+        "failed to get port",
+    );
+    let base_connection_string = format!("postgres://postgres:postgres@{host}:{port}");
+    let database_name = test_random_database_name();
+
+    let verification_config = test_expect_ok(
+        MigrationConfiguration::new(
+            base_connection_string,
+            database_name.clone(),
+            test_fixtures_dir(),
+        ),
+        "invalid verification configuration",
+    );
+
+    let empty_connection_config = test_expect_ok(
+        MigrationConfiguration::new("   ", database_name, test_fixtures_dir()),
+        "invalid migration configuration",
+    );
+
+    let executed_at = test_datetime(2021, 10, 17, 12, 10, 10);
+    let migrator = DbMigrator::with_clock_mock(FixedClockMock(executed_at), Vec::<String>::new());
+
+    let succeeded = migrator
+        .try_apply_migrations(
+            DatabaseKind::Postgresql,
+            &empty_connection_config,
+            &CancellationToken::new(),
+        )
+        .await;
+    assert!(
+        !succeeded,
+        "expected an empty connection string to report failure"
+    );
+
+    assert!(logs_contain("empty connectionstring is not valid"));
+    assert!(
+        !logs_contain("setup database executed successfully"),
+        "expected no database setup to run for an empty connection string"
+    );
+    assert!(
+        !logs_contain("script was run"),
+        "expected no script to run for an empty connection string"
+    );
+
+    assert!(
+        !test_database_exists(&verification_config).await,
+        "expected the target database to not have been created since the run stopped on the empty connection string"
     );
 }

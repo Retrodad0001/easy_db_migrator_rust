@@ -11,9 +11,6 @@ use crate::{
 
 const TRACKING_TABLE: &str = "DbMigrationsRun";
 
-/// The connection string in [`MigrationConfiguration`] is an ADO-style string that
-/// selects no database; passing `database` connects to that database's context,
-/// otherwise the connection defaults to `master`.
 async fn connect(
     config: &MigrationConfiguration,
     database: Option<&str>,
@@ -82,8 +79,6 @@ pub(crate) async fn try_ensure_tracking_table(
     Ok(())
 }
 
-/// Runs a single migration script and records it in the tracking table, unless
-/// it was already run before or the cancellation token has been set.
 pub(crate) async fn run_script(
     config: &MigrationConfiguration,
     script: &Script,
