@@ -25,8 +25,16 @@ jobs:
         with:
           tool: cargo-audit
 
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@7572810d7dd469b651bb7793945692cf78da5dd7 # v2
+        with:
+          tool: cargo-deny
+
       - name: Run cargo audit
         run: cargo audit
+
+      - name: Run cargo deny
+        run: cargo deny check
 
       - name: Run Semgrep
         run: docker run --rm --entrypoint semgrep -v "${{ github.workspace }}:/src" -w /src semgrep/semgrep --config p/owasp-top-ten --config p/security-audit --config p/0xdea .

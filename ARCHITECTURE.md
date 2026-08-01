@@ -1,0 +1,157 @@
+# Architecture
+
+## Context
+
+this is a database migration tool for Microsoft SQL server and PostgreSQL and
+can be used by other rust projects
+
+## Deployment
+
+The webpage, the API, and the database run together in a single container.
+Deploying is therefore one image and one thing to start — that simplicity is the
+reason for the choice.
+
+## Tooling
+
+Every framework, library, and tool this project commits to, and why it was chosen.
+The user decides what goes here; nothing enters `Cargo.toml` before it is listed.
+
+- **PostgreSQL** — one of the two databases this tool migrates. It is a target,
+  not this project's own datastore; the only thing the tool keeps there is its
+  `DbMigrationsRun` tracking table.
+- **Microsoft SQL Server** — the other target database. Both backends are always
+  compiled in, so neither is hidden behind a Cargo feature.
+- **sqlx** — the PostgreSQL client. Migration scripts are plain SQL run through
+  the runtime query API; no ORM, and deliberately not the compile-time-checked
+  macros, because the database a migration targets does not exist at build time.
+- **tiberius** — the SQL Server client, chosen on the same terms: plain SQL, no
+  ORM.
+- **tokio** — the async runtime everything above runs on. It is the only runtime
+  the crate will take on; a second one is never added, tests included.
+- **tokio-util** — two things: `CancellationToken`, which the public API
+  re-exports so a caller can stop a run part-way, and the `compat` adapter that
+  lets tiberius accept a tokio `TcpStream`.
+- **chrono** — date and time types. Parses the date in a script filename and
+  stamps `executed_at` on each tracking row.
+- **thiserror** — derives the single crate-wide `Error` enum in `error.rs`.
+- **tracing** — how the library reports what it did, rather than an injected
+  logger. Failures are logged and then collapsed into a `bool`, so the log is the
+  only account a caller gets of what actually happened.
+- **testcontainers** and **testcontainers-modules** — start the real PostgreSQL
+  and SQL Server containers the integration tests run against, one container per
+  test so the suite can run in parallel.
+- **rand** — generates the random database name each integration test targets,
+  which is what keeps those parallel tests from colliding.
+- **tracing-test** — captures `tracing` output inside a test, so the log records
+  a run emitted can be asserted like any other observable effect.
+- **Docker Desktop** — runs the containers the local integration tests start, and
+  the containerised checks in the Quality checks section.
+
+## Reference code and documentation
+
+Documentation and example code worth consulting for the tooling above — the
+sources to check before guessing at an API.
+
+- **tokio** — <https://tokio.rs/> and <https://docs.rs/tokio/latest/tokio/>
+- **sqlx** — <https://docs.rs/sqlx/latest/sqlx/>
+- <https://crates.io/crates/tiberius>
+- <https://www.docker.com/>
+
+## Code rules
+
+General Rust/cargo rules for this repo live in the personal `jarvis` skill
+(`~/.claude/skills/jarvis`) — error handling, lint denials, comment policy,
+constructor shape, test conventions, and the validation gates a change must pass.
+They are not restated here; a rule belongs in exactly one place.
+
+This file holds only the rules specific to *this* project. Where the two conflict,
+this file wins.
+
+- **Visibility is `pub(crate)` by default** — every function, method, and type is
+  `pub(crate)` unless it is part of the crate's actual public API surface; only
+  those are `pub`.
+- **`#[cfg(test)]` on every test function** — stacked directly on the function
+  (`#[cfg(test)] #[tokio::test] async fn ...`), even when an enclosing
+  `#[cfg(test)] mod tests` already gates it out of non-test builds.
+- **No zero-parameter constructors** — a `new()`, or any other associated
+  constructor, taking no arguments must not exist; every constructor takes at
+  least one meaningful parameter.
+- **Fields are set through the constructor** — every field a struct holds is
+  supplied as a constructor parameter, never populated afterwards by a
+  `&mut self` setter method.
+- **No blanket `Default` impls** — `impl Default` is a zero-parameter constructor
+  by another name, and it hides required configuration behind an implicit choice.
+  Construction stays explicit: callers pass every value at the call site.
+
+## Quality checks
+
+How a change is verified before it counts as done. The gates themselves — format,
+lint, test, audit, deny, outdated, static analysis — are defined in the `jarvis`
+skill and not repeated here; this section records how they are run in this repo
+and any check that is specific to it.
+
+- **The code matches the Tooling section** — nothing is used that Tooling does not
+  list. Every crate in `Cargo.toml` traces back to an entry there, and a library
+  that turns out to be needed is agreed and written down before it is used, not
+  justified afterwards. No tool enforces this one; it is checked by reading.
+- **Formatting** — `cargo fmt --check` must be clean across every `.rs` file in
+  the crate, tests included. Formatting is applied by running `cargo fmt`, never
+  adjusted by hand and never argued with; rustfmt's output is the house style.
+- **No warnings** — every linter used here must finish with no errors *and* no
+  warnings, not merely a zero exit code. A warning is fixed at its cause, never
+  baselined and never hidden behind an inline suppression; where a suppression is
+  genuinely the right answer, it is agreed with the user first and states why.
+- **Markdown** — every `.md` file in the repo must pass `markdownlint`, run via
+  Docker (`davidanson/markdownlint-cli2`) like the other containerised checks.
+- **Static analysis** — `semgrep` must report zero findings, run via Docker with
+  `target/` excluded. It scans only the files git tracks, so a brand-new file
+  proves nothing until it is staged — check what it actually scanned, not just
+  the finding count.
+- **Unused dependencies** — `cargo machete` must find nothing. A crate listed in
+  `Cargo.toml` that no code imports is removed rather than left to age into an
+  advisory or a licence obligation nobody remembers taking on.
+- **Documentation builds** — `cargo doc --no-deps` must succeed with no warnings,
+  including no broken intra-doc links. Every public item carries a doc comment
+  already; this proves those comments still resolve to the items they reference.
+- **Dependency advisories** — `cargo audit` must report no warnings and no
+  vulnerabilities. Unmaintained or yanked crates count as warnings and are dealt
+  with, not ignored; an advisory is never silenced by an allow-list entry without
+  the user agreeing to it first.
+- **Licences, bans, and sources** — `cargo deny check` must pass all of its
+  gates, not only the advisories one. Its configuration is `deny.toml` at the
+  repo root, and that file is the single place a decision is recorded; a crate is
+  never let through by relaxing a check on the command line instead. Adding an
+  exception, allowing a licence, or skipping an advisory there is agreed with the
+  user first, and says why in the file.
+- **Dependency freshness** — `cargo outdated --root-deps-only` must report
+  nothing behind a newer release. Alone among the gates here this one is not a
+  per-change check: a crate goes stale because someone else published, never
+  because of anything in the commit, so it runs on the weekly schedule
+  (`ci_weekly.yml`) instead of on every push. It covers the direct dependencies
+  only — a transitive version is not something this repo can bump on its own. A
+  dependency left to drift becomes an advisory or a painful upgrade later, so the
+  bump is taken while it is still small. Where an upgrade genuinely cannot be
+  taken yet, that is agreed with the user and the reason written down — never
+  passed over in silence.
+- **Every behaviour is proven by a test** — a feature is not done because it
+  compiles and appears to work in the browser; it is done when a test fails
+  without it and passes with it. Shipping behaviour no test exercises is the one
+  thing this section exists to prevent.
+- **Every code path is exercised by an integration test** — the integration
+  suites are what prove the code does its job against a real database, so a
+  function, match arm, or error path that no integration test reaches counts as
+  untested even where a unit test covers it. Code nothing in `tests/` drives is
+  reported to the user as uncovered, together with a specific test proposed for
+  it: which suite it belongs in, the scenario it sets up, and what it asserts.
+  The test is proposed for review and never added unasked — the user decides
+  which tests get written. No tool enforces this one; it is checked by reading.
+- **Tests** — `cargo test` must finish with no failures and nothing skipped. An
+  `#[ignore]`d test does not count as passing, and a run that executed zero tests
+  is not evidence that anything works.
+- **Integration container tests** — both suites,
+  `tests/postgres_integration_tests.rs` and `tests/mssql_integration_tests.rs`,
+  run in full against real database containers and must come back with no
+  errors, no failures, and no warnings — warnings raised while compiling the test
+  targets included. Docker has to be running: a container that would not start is
+  a failed run, never a skipped check. Running one backend's suite says nothing
+  about the other, and a suite that did not execute is never reported as passing.
