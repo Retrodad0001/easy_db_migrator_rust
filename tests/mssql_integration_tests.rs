@@ -12,10 +12,38 @@ use testcontainers_modules::testcontainers::ContainerAsync;
 use testcontainers_modules::testcontainers::runners::AsyncRunner;
 use tiberius::{Client, Config};
 use tokio::net::TcpStream;
-use tokio_util::compat::TokioAsyncWriteCompatExt;
+use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
 use tracing_test::traced_test;
 
 const SA_PASSWORD: &str = "yourStrong(!)Password";
+
+macro_rules! assert_logged {
+    ($level:expr, $message:expr) => {
+        logs_assert(|lines: &[&str]| {
+            let expected_level: &str = $level;
+            let expected_message: &str = $message;
+            let matching: Vec<&&str> = lines
+                .iter()
+                .filter(|line| line.contains(expected_message))
+                .collect();
+            if matching.is_empty() {
+                return Err(format!(
+                    "expected a log record containing {expected_message:?}, found none"
+                ));
+            }
+            if matching
+                .iter()
+                .any(|line| line.contains(&format!(" {expected_level} ")))
+            {
+                Ok(())
+            } else {
+                Err(format!(
+                    "expected {expected_message:?} to be logged at {expected_level}, found {matching:?}"
+                ))
+            }
+        });
+    };
+}
 
 struct FixedClockMock(DateTime<Utc>);
 
@@ -113,6 +141,68 @@ async fn test_database_exists(config: &MigrationConfiguration) -> bool {
     );
 
     row.is_some()
+}
+
+async fn test_connect_without_database(
+    config: &MigrationConfiguration,
+) -> Client<Compat<TcpStream>> {
+    let tds_config = test_expect_ok(
+        Config::from_ado_string(config.connection_string()),
+        "invalid ado connection string",
+    );
+    let tcp = test_expect_ok(
+        TcpStream::connect(tds_config.get_addr()).await,
+        "failed to connect for setup",
+    );
+    test_expect_ok(
+        Client::connect(tds_config, tcp.compat_write()).await,
+        "failed to establish tds connection for setup",
+    )
+}
+
+async fn test_create_database(config: &MigrationConfiguration) {
+    let mut client = test_connect_without_database(config).await;
+    let query = format!("CREATE DATABASE [{}]", config.database_name());
+    test_expect_ok(
+        client.execute(query.as_str(), &[]).await,
+        "failed to create the database up front",
+    );
+}
+
+async fn test_execute_in_database(config: &MigrationConfiguration, sql: &str) {
+    let mut tds_config = test_expect_ok(
+        Config::from_ado_string(config.connection_string()),
+        "invalid ado connection string",
+    );
+    tds_config.database(config.database_name());
+
+    let tcp = test_expect_ok(
+        TcpStream::connect(tds_config.get_addr()).await,
+        "failed to connect for setup",
+    );
+    let mut client = test_expect_ok(
+        Client::connect(tds_config, tcp.compat_write()).await,
+        "failed to establish tds connection for setup",
+    );
+
+    test_expect_ok(
+        client.execute(sql, &[]).await,
+        "failed to run setup statement",
+    );
+}
+
+async fn test_set_database_online(config: &MigrationConfiguration, online: bool) {
+    let mut client = test_connect_without_database(config).await;
+    let database_name = config.database_name();
+    let query = if online {
+        format!("ALTER DATABASE [{database_name}] SET ONLINE")
+    } else {
+        format!("ALTER DATABASE [{database_name}] SET OFFLINE WITH ROLLBACK IMMEDIATE")
+    };
+    test_expect_ok(
+        client.execute(query.as_str(), &[]).await,
+        "failed to change whether the database is online",
+    );
 }
 
 async fn test_table_exists(config: &MigrationConfiguration, table_name: &str) -> bool {
@@ -285,7 +375,7 @@ async fn when_nothing_goes_wrong_with_running_the_migrations_on_an_empty_databas
             .await,
         "expected DeleteDatabaseIfExistAsync to succeed",
     );
-    assert!(logs_contain("DeleteDatabaseIfExistAsync has executed"));
+    assert_logged!("INFO", "DeleteDatabaseIfExistAsync has executed");
 
     test_expect_ok(
         migrator
@@ -294,11 +384,11 @@ async fn when_nothing_goes_wrong_with_running_the_migrations_on_an_empty_databas
         "expected the migration run to succeed",
     );
 
-    assert!(logs_contain("setup database executed successfully"));
-    assert!(logs_contain("script was run"));
-    assert!(logs_contain("20211230_002_Script2.sql"));
-    assert!(logs_contain("20211231_001_Script1.sql"));
-    assert!(logs_contain("migration process executed successfully"));
+    assert_logged!("INFO", "setup database executed successfully");
+    assert_logged!("INFO", "script was run");
+    assert_logged!("INFO", "20211230_002_Script2.sql");
+    assert_logged!("INFO", "20211231_001_Script1.sql");
+    assert_logged!("INFO", "migration process executed successfully");
 
     let tracked_rows = test_fetch_tracking_rows(&config).await;
     let [first, second] = tracked_rows.as_slice() else {
@@ -368,12 +458,13 @@ async fn can_skip_scripts_if_they_already_ran_before() {
         "expected the second migration run to succeed",
     );
 
-    assert!(logs_contain("setup database executed successfully"));
-    assert!(logs_contain("setup versioning table executed successfully"));
-    assert!(logs_contain(
+    assert_logged!("INFO", "setup database executed successfully");
+    assert_logged!("INFO", "setup versioning table executed successfully");
+    assert_logged!(
+        "INFO",
         "script was not run because script was already executed"
-    ));
-    assert!(logs_contain("migration process executed successfully"));
+    );
+    assert_logged!("INFO", "migration process executed successfully");
 
     let rows = test_fetch_tracking_rows(&config).await;
     let [first, second] = rows.as_slice() else {
@@ -437,9 +528,7 @@ async fn can_cancel_the_migration_process() {
         "expected a cancelled run to still report success",
     );
 
-    assert!(logs_contain(
-        "migration process was canceled from the outside"
-    ));
+    assert_logged!("WARN", "migration process was canceled from the outside");
 
     assert!(
         !test_database_exists(&config).await,
@@ -479,15 +568,13 @@ async fn reports_failure_when_a_script_fails_and_stops_running_later_scripts() {
         "expected the migration run to report failure when a script fails",
     );
     assert_eq!(message, "migration process executed with errors");
-    assert!(
-        logs_contain(&message),
-        "expected the returned error text to be the same text logged through tracing"
-    );
+    assert_logged!("ERROR", &message);
 
-    assert!(logs_contain("script was not completed due to exception"));
-    assert!(logs_contain(
+    assert_logged!("ERROR", "script was not completed due to exception");
+    assert_logged!(
+        "WARN",
         "script was skipped due to exception in previous script"
-    ));
+    );
 
     let rows = test_fetch_tracking_rows(&config).await;
     let [only] = rows.as_slice() else {
@@ -540,10 +627,7 @@ async fn reports_failure_and_runs_nothing_when_the_connection_string_is_empty() 
         "expected an empty connection string to report failure",
     );
     assert_eq!(message, "empty connectionstring is not valid");
-    assert!(
-        logs_contain(&message),
-        "expected the returned error text to be the same text logged through tracing"
-    );
+    assert_logged!("ERROR", &message);
     assert!(
         !logs_contain("setup database executed successfully"),
         "expected no database setup to run for an empty connection string"
@@ -556,5 +640,220 @@ async fn reports_failure_and_runs_nothing_when_the_connection_string_is_empty() 
     assert!(
         !test_database_exists(&verification_config).await,
         "expected the target database to not have been created since the run stopped on the empty connection string"
+    );
+}
+
+#[cfg(test)]
+#[tokio::test]
+#[traced_test]
+async fn reports_failure_when_the_scripts_could_not_be_loaded() {
+    let (_container, connection_string) = test_start_mssql().await;
+
+    let missing_scripts_dir =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mssql/does_not_exist");
+
+    let config = test_expect_ok(
+        MigrationConfiguration::new(
+            connection_string,
+            test_get_random_database_name(),
+            missing_scripts_dir,
+        ),
+        "invalid migration configuration",
+    );
+
+    let executed_at = test_datetime(2021, 10, 17, 12, 10, 10);
+    let migrator = DbMigrator::with_clock_mock(FixedClockMock(executed_at), Vec::<String>::new());
+
+    test_expect_ok(
+        migrator
+            .try_delete_database_if_exists(DatabaseKind::Mssql, &config)
+            .await,
+        "expected DeleteDatabaseIfExistAsync to succeed",
+    );
+
+    let message = test_expect_migration_error(
+        migrator
+            .try_apply_migrations(DatabaseKind::Mssql, &config, &CancellationToken::new())
+            .await,
+        "expected the migration run to report failure when the scripts cannot be loaded",
+    );
+    assert_eq!(
+        message,
+        "One or more scripts could not be loaded, is the sequence patterns correct?"
+    );
+    assert_logged!("ERROR", &message);
+    assert_logged!("ERROR", "migration process executed with errors");
+    assert!(
+        !logs_contain("script was run"),
+        "expected no script to run when the scripts could not be loaded"
+    );
+
+    assert!(
+        test_database_exists(&config).await,
+        "expected the database to exist, since it is created before scripts are loaded"
+    );
+
+    let tables = test_user_table_names(&config).await;
+    assert_eq!(
+        tables,
+        vec!["DbMigrationsRun".to_string()],
+        "expected only the tracking table — no migration script may have created anything"
+    );
+
+    let rows = test_fetch_tracking_rows(&config).await;
+    assert!(
+        rows.is_empty(),
+        "expected no tracking rows to have been written, got {rows:#?}"
+    );
+}
+
+#[cfg(test)]
+#[tokio::test]
+#[traced_test]
+async fn reports_failure_when_the_tracking_table_cannot_be_created() {
+    let (_container, connection_string) = test_start_mssql().await;
+
+    let config = test_expect_ok(
+        MigrationConfiguration::new(
+            connection_string,
+            test_get_random_database_name(),
+            test_fixtures_dir(),
+        ),
+        "invalid migration configuration",
+    );
+
+    test_create_database(&config).await;
+    test_set_database_online(&config, false).await;
+
+    let executed_at = test_datetime(2021, 10, 17, 12, 10, 10);
+    let migrator = DbMigrator::with_clock_mock(FixedClockMock(executed_at), Vec::<String>::new());
+
+    let message = test_expect_migration_error(
+        migrator
+            .try_apply_migrations(DatabaseKind::Mssql, &config, &CancellationToken::new())
+            .await,
+        "expected the migration run to report failure when the tracking table cannot be created",
+    );
+    assert_eq!(message, "setup versioning table executed with errors");
+    assert_logged!("ERROR", &message);
+    assert_logged!("INFO", "setup database executed successfully");
+    assert_logged!("ERROR", "migration process executed with errors");
+    assert!(
+        !logs_contain("setup versioning table executed successfully"),
+        "expected the versioning-table step to not report success"
+    );
+    assert!(
+        !logs_contain("script was run"),
+        "expected no script to run when the tracking table could not be created"
+    );
+
+    test_set_database_online(&config, true).await;
+
+    assert!(
+        !test_table_exists(&config, "DbMigrationsRun").await,
+        "expected the tracking table to not exist"
+    );
+    let tables = test_user_table_names(&config).await;
+    assert!(
+        tables.is_empty(),
+        "expected no tables at all — no tracking table and no script ran, got {tables:?}"
+    );
+}
+
+#[cfg(test)]
+#[tokio::test]
+#[traced_test]
+async fn deleting_a_database_that_does_not_exist_is_a_no_op() {
+    let (_container, connection_string) = test_start_mssql().await;
+
+    let config = test_expect_ok(
+        MigrationConfiguration::new(
+            connection_string,
+            test_get_random_database_name(),
+            test_fixtures_dir(),
+        ),
+        "invalid migration configuration",
+    );
+
+    assert!(
+        !test_database_exists(&config).await,
+        "expected the database to not exist before the delete"
+    );
+
+    let executed_at = test_datetime(2021, 10, 17, 12, 10, 10);
+    let migrator = DbMigrator::with_clock_mock(FixedClockMock(executed_at), Vec::<String>::new());
+
+    test_expect_ok(
+        migrator
+            .try_delete_database_if_exists(DatabaseKind::Mssql, &config)
+            .await,
+        "expected deleting a database that does not exist to be a no-op",
+    );
+
+    assert_logged!("INFO", "DeleteDatabaseIfExistAsync has executed");
+    assert!(
+        !logs_contain("DeleteDatabaseIfExistAsync executed with error"),
+        "expected no error to be logged when there was nothing to delete"
+    );
+    assert!(
+        !test_database_exists(&config).await,
+        "expected the database to still not exist afterwards"
+    );
+}
+
+#[cfg(test)]
+#[tokio::test]
+#[traced_test]
+async fn creating_a_database_that_already_exists_keeps_it_and_its_data() {
+    let (_container, connection_string) = test_start_mssql().await;
+
+    let config = test_expect_ok(
+        MigrationConfiguration::new(
+            connection_string,
+            test_get_random_database_name(),
+            test_fixtures_dir(),
+        ),
+        "invalid migration configuration",
+    );
+
+    test_create_database(&config).await;
+    test_execute_in_database(
+        &config,
+        "CREATE TABLE marker_table (Id int IDENTITY(1,1) PRIMARY KEY)",
+    )
+    .await;
+
+    assert!(
+        test_database_exists(&config).await,
+        "expected the database to exist before the migration run"
+    );
+
+    let executed_at = test_datetime(2021, 10, 17, 12, 10, 10);
+    let migrator = DbMigrator::with_clock_mock(FixedClockMock(executed_at), Vec::<String>::new());
+
+    test_expect_ok(
+        migrator
+            .try_apply_migrations(DatabaseKind::Mssql, &config, &CancellationToken::new())
+            .await,
+        "expected the migration run to succeed against an already existing database",
+    );
+
+    assert_logged!("INFO", "setup database executed successfully");
+    assert_logged!("INFO", "migration process executed successfully");
+    assert!(
+        !logs_contain("setup database executed with errors"),
+        "expected no error for a database that was already there"
+    );
+
+    assert!(
+        test_table_exists(&config, "marker_table").await,
+        "expected the pre-existing table to survive — the database must not be recreated"
+    );
+
+    let rows = test_fetch_tracking_rows(&config).await;
+    assert_eq!(
+        rows.len(),
+        3,
+        "expected all three fixture scripts to be tracked, got {rows:#?}"
     );
 }
