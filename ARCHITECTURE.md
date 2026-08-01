@@ -68,13 +68,9 @@ sources to check before guessing at an API.
 
 ## Code rules
 
-General Rust/cargo rules for this repo live in the personal `jarvis` skill
-(`~/.claude/skills/jarvis`) — error handling, lint denials, comment policy,
-constructor shape, test conventions, and the validation gates a change must pass.
-They are not restated here; a rule belongs in exactly one place.
-
-This file holds only the rules specific to *this* project. Where the two conflict,
-this file wins.
+The rules the code in this repo follows. Lint denials are declared in
+`Cargo.toml` under `[lints.rust]` and `[lints.clippy]` and enforced by `cargo
+clippy`; the rules below are the ones no lint can check.
 
 - **Nothing beyond what Context describes** — the crate stays a library that
   migrates Microsoft SQL Server and PostgreSQL, usable from another Rust project.
@@ -100,10 +96,8 @@ this file wins.
 
 ## Quality checks
 
-How a change is verified before it counts as done. The gates themselves — format,
-lint, test, audit, deny, outdated, static analysis — are defined in the `jarvis`
-skill and not repeated here; this section records how they are run in this repo
-and any check that is specific to it.
+How a change is verified before it counts as done. Every gate a change must pass
+is listed below, together with how it is run in this repo.
 
 - **The code matches the Context section** — what the crate does still matches
   what Context says it is. A module, public item, or binary target that only
@@ -128,6 +122,11 @@ and any check that is specific to it.
   `target/` excluded. It scans only the files git tracks, so a brand-new file
   proves nothing until it is staged — check what it actually scanned, not just
   the finding count.
+- **Workflow linting** — `actionlint` must exit clean, run via Docker
+  (`rhysd/actionlint:latest`) like the other containerised checks. Any change
+  under `.github/workflows/` is checked with it before that change counts as
+  done. Nothing else validates those files: a broken workflow otherwise announces
+  itself on the next push, once the mistake is already committed.
 - **Unused dependencies** — `cargo machete` must find nothing. A crate listed in
   `Cargo.toml` that no code imports is removed rather than left to age into an
   advisory or a licence obligation nobody remembers taking on.
@@ -154,6 +153,13 @@ and any check that is specific to it.
   bump is taken while it is still small. Where an upgrade genuinely cannot be
   taken yet, that is agreed with the user and the reason written down — never
   passed over in silence.
+- **Toolchain freshness** — `rustup check` must report the stable toolchain, and
+  `rustup` itself, up to date. Like dependency freshness this one is cadence-based
+  rather than per-change: it runs at most once a calendar week, on the first task
+  of that week, and is skipped if that week's check already happened. What it
+  finds is reported and the user decides what to do about it — `rustup update` is
+  never run, and a pinned `rust-toolchain.toml` never edited, without approval
+  for that specific action.
 - **Every behaviour is proven by a test** — a feature is not done because it
   compiles and appeared to work when run by hand against a database; it is done
   when a test fails without it and passes with it. Shipping behaviour no test
@@ -176,6 +182,16 @@ and any check that is specific to it.
   targets included. Docker has to be running: a container that would not start is
   a failed run, never a skipped check. Running one backend's suite says nothing
   about the other, and a suite that did not execute is never reported as passing.
+- **Integration tests assert every observable effect** — a container test proves
+  what the run actually did, not merely that it finished, and checks all three of
+  these every time. The database: the rows in the tracking table and the tables
+  the scripts were meant to create, and just as importantly the ones a skipped or
+  failed script must not have created. The log: the `tracing` records the run
+  emitted, including the absence of a record that should not appear. The return
+  value: `Ok` where the run is expected to succeed, and where it is expected to
+  fail an `Err` whose message is asserted exactly and shown to be the same text
+  the run logged. Checking one of the three passes happily while the other two
+  are wrong.
 
 ## Agent rules
 

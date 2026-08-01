@@ -7,13 +7,6 @@ expected to work here.
 
 ## Agent rules
 
-General agent rules for this repo live in the personal `jarvis` skill
-(`~/.claude/skills/jarvis`) — never deleting `//TODO`/`//FIXME`/`//BUG` markers,
-leaving it to the user to decide which tests get added, not changing or deleting
-an existing test without asking, and not touching `Cargo.toml` without asking.
-They are not restated here; a rule belongs in exactly one place. Where the two
-conflict, this file wins.
-
 - **Every quality check passes before a change is done** — after changing any
   code, the whole Quality checks section of `ARCHITECTURE.md` is run, not the
   subset that seems related to the change, and every gate comes back clean. A

@@ -44,7 +44,6 @@ impl DbMigrator {
     ///
     /// This exists so a test can pin `executed_at` to a fixed instant. It is not part
     /// of the supported API — application code uses [`DbMigrator::new`].
-    #[doc(hidden)]
     pub fn with_clock_mock(
         clock: impl ClockMock + 'static,
         excluded_scripts: impl IntoIterator<Item = String>,
