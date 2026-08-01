@@ -5,6 +5,11 @@ use thiserror::Error;
 /// The single error type returned by all fallible operations in this crate.
 #[derive(Debug, Error)]
 pub enum Error {
+    /// A migration step failed. The message is the same text reported through
+    /// `tracing` for that failure.
+    #[error("{0}")]
+    MigrationFailed(String),
+
     /// The supplied [`MigrationConfiguration`](crate::MigrationConfiguration) was invalid.
     #[error("invalid migration configuration: {0}")]
     InvalidConfig(String),

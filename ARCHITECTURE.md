@@ -5,11 +5,20 @@
 this is a database migration tool for Microsoft SQL server and PostgreSQL and
 can be used by other rust projects
 
+It doubles as a framework for integration testing: a project points it at its own
+migration scripts to build the database a test needs, runs the test against it,
+and drops it again afterwards. Both uses are first-class, so the API stays usable
+from test code and not only from an application's startup path.
+
 ## Deployment
 
-The webpage, the API, and the database run together in a single container.
-Deploying is therefore one image and one thing to start — that simplicity is the
-reason for the choice.
+There is nothing to deploy. This is a library crate — `src/lib.rs`, no binary
+target — so it ships as a dependency inside whatever application consumes it,
+and that application's deployment is the only one in play. It has no database,
+UI, or running service of its own.
+
+`Cargo.toml` sets `publish = false`, so it is not on crates.io today: a consumer
+takes it by git URL or local path rather than by a version from the registry.
 
 ## Tooling
 
@@ -67,6 +76,12 @@ They are not restated here; a rule belongs in exactly one place.
 This file holds only the rules specific to *this* project. Where the two conflict,
 this file wins.
 
+- **Nothing beyond what Context describes** — the crate stays a library that
+  migrates Microsoft SQL Server and PostgreSQL, usable from another Rust project.
+  It grows no UI, no HTTP or web layer, no long-running service, no datastore of
+  its own, and no third database backend. Widening what this crate is starts by
+  agreeing the change and rewriting Context; the code follows that, never the
+  other way round.
 - **Visibility is `pub(crate)` by default** — every function, method, and type is
   `pub(crate)` unless it is part of the crate's actual public API surface; only
   those are `pub`.
@@ -90,6 +105,12 @@ lint, test, audit, deny, outdated, static analysis — are defined in the `jarvi
 skill and not repeated here; this section records how they are run in this repo
 and any check that is specific to it.
 
+- **The code matches the Context section** — what the crate does still matches
+  what Context says it is. A module, public item, or binary target that only
+  makes sense for something Context does not describe is the signal to stop, and
+  so is a line in Context that no code backs up any more. Both are reported to
+  the user rather than quietly reconciled either way. No tool enforces this one;
+  it is checked by reading.
 - **The code matches the Tooling section** — nothing is used that Tooling does not
   list. Every crate in `Cargo.toml` traces back to an entry there, and a library
   that turns out to be needed is agreed and written down before it is used, not
@@ -134,9 +155,9 @@ and any check that is specific to it.
   taken yet, that is agreed with the user and the reason written down — never
   passed over in silence.
 - **Every behaviour is proven by a test** — a feature is not done because it
-  compiles and appears to work in the browser; it is done when a test fails
-  without it and passes with it. Shipping behaviour no test exercises is the one
-  thing this section exists to prevent.
+  compiles and appeared to work when run by hand against a database; it is done
+  when a test fails without it and passes with it. Shipping behaviour no test
+  exercises is the one thing this section exists to prevent.
 - **Every code path is exercised by an integration test** — the integration
   suites are what prove the code does its job against a real database, so a
   function, match arm, or error path that no integration test reaches counts as
@@ -155,3 +176,8 @@ and any check that is specific to it.
   targets included. Docker has to be running: a container that would not start is
   a failed run, never a skipped check. Running one backend's suite says nothing
   about the other, and a suite that did not execute is never reported as passing.
+
+## Agent rules
+
+How an agent works in this repo — including that every gate in Quality checks
+must pass before a change counts as done — lives in `AGENTS.md`, not here.

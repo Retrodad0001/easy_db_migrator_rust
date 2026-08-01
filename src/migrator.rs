@@ -3,12 +3,22 @@ use tracing::{error, info, warn};
 
 use crate::{
     backend::{self, RunMigrationResult},
-    clock::ClockMock,
+    clock::{ClockMock, SystemClock},
     config::MigrationConfiguration,
     database_kind::DatabaseKind,
+    error::Error,
     script,
     script::Script,
 };
+
+const CANCELLED_FROM_OUTSIDE: &str = "migration process was canceled from the outside";
+const EMPTY_CONNECTION_STRING: &str = "empty connectionstring is not valid";
+const DELETE_DATABASE_FAILED: &str = "DeleteDatabaseIfExistAsync executed with error";
+const SETUP_DATABASE_FAILED: &str = "setup database executed with errors";
+const SETUP_TRACKING_TABLE_FAILED: &str = "setup versioning table executed with errors";
+const SCRIPTS_NOT_LOADED: &str =
+    "One or more scripts could not be loaded, is the sequence patterns correct?";
+const MIGRATION_FAILED: &str = "migration process executed with errors";
 
 enum RunOutcome {
     Completed { all_succeeded: bool },
@@ -23,8 +33,18 @@ pub struct DbMigrator {
 }
 
 impl DbMigrator {
+    /// Creates a migrator backed by the system clock, taking the script filenames to
+    /// exclude from the next migration run.
+    pub fn new(excluded_scripts: impl IntoIterator<Item = String>) -> Self {
+        Self::with_clock_mock(SystemClock, excluded_scripts)
+    }
+
     /// Creates a migrator with an injectable [`ClockMock`] and the script filenames to
     /// exclude from the next migration run.
+    ///
+    /// This exists so a test can pin `executed_at` to a fixed instant. It is not part
+    /// of the supported API — application code uses [`DbMigrator::new`].
+    #[doc(hidden)]
     pub fn with_clock_mock(
         clock: impl ClockMock + 'static,
         excluded_scripts: impl IntoIterator<Item = String>,
@@ -36,11 +56,14 @@ impl DbMigrator {
     }
 
     /// Deletes the configured database if it exists.
+    ///
+    /// On failure the returned [`Error::MigrationFailed`] carries the same text that
+    /// was reported through `tracing`.
     pub async fn try_delete_database_if_exists(
         &self,
         kind: DatabaseKind,
         config: &MigrationConfiguration,
-    ) -> bool {
+    ) -> Result<(), Error> {
         let result = match kind {
             DatabaseKind::Postgresql => {
                 backend::postgres::try_delete_database_if_exists(config).await
@@ -51,31 +74,35 @@ impl DbMigrator {
         match result {
             Ok(()) => {
                 info!("DeleteDatabaseIfExistAsync has executed");
-                true
+                Ok(())
             }
             Err(error) => {
-                error!(%error, "DeleteDatabaseIfExistAsync executed with error");
-                false
+                error!(%error, "{DELETE_DATABASE_FAILED}");
+                Err(Error::MigrationFailed(DELETE_DATABASE_FAILED.to_string()))
             }
         }
     }
 
     /// Runs all pending migration scripts found in `config`'s scripts directory,
     /// creating the database and tracking table first if needed.
+    ///
+    /// A cancelled run is not a failure and returns `Ok(())`. On failure the returned
+    /// [`Error::MigrationFailed`] carries the same text that was reported through
+    /// `tracing`.
     pub async fn try_apply_migrations(
         &self,
         kind: DatabaseKind,
         config: &MigrationConfiguration,
         cancellation_token: &CancellationToken,
-    ) -> bool {
+    ) -> Result<(), Error> {
         if cancellation_token.is_cancelled() {
-            warn!("migration process was canceled from the outside");
-            return true;
+            warn!("{CANCELLED_FROM_OUTSIDE}");
+            return Ok(());
         }
 
         if config.connection_string().trim().is_empty() {
-            error!("empty connectionstring is not valid");
-            return false;
+            error!("{EMPTY_CONNECTION_STRING}");
+            return Err(Error::MigrationFailed(EMPTY_CONNECTION_STRING.to_string()));
         }
 
         info!(
@@ -94,9 +121,9 @@ impl DbMigrator {
             DatabaseKind::Mssql => backend::mssql::try_create_database_if_missing(config).await,
         };
         if let Err(error) = create_database_result {
-            error!(%error, "setup database executed with errors");
-            error!("migration process executed with errors");
-            return false;
+            error!(%error, "{SETUP_DATABASE_FAILED}");
+            error!("{MIGRATION_FAILED}");
+            return Err(Error::MigrationFailed(SETUP_DATABASE_FAILED.to_string()));
         }
         info!("setup database executed successfully");
 
@@ -105,9 +132,11 @@ impl DbMigrator {
             DatabaseKind::Mssql => backend::mssql::try_ensure_tracking_table(config).await,
         };
         if let Err(error) = tracking_table_result {
-            error!(%error, "setup versioning table executed with errors");
-            error!("migration process executed with errors");
-            return false;
+            error!(%error, "{SETUP_TRACKING_TABLE_FAILED}");
+            error!("{MIGRATION_FAILED}");
+            return Err(Error::MigrationFailed(
+                SETUP_TRACKING_TABLE_FAILED.to_string(),
+            ));
         }
         info!("setup versioning table executed successfully");
 
@@ -117,9 +146,9 @@ impl DbMigrator {
         ) {
             Ok(scripts) => scripts,
             Err(error) => {
-                error!(%error, "One or more scripts could not be loaded, is the sequence patterns correct?");
-                error!("migration process executed with errors");
-                return false;
+                error!(%error, "{SCRIPTS_NOT_LOADED}");
+                error!("{MIGRATION_FAILED}");
+                return Err(Error::MigrationFailed(SCRIPTS_NOT_LOADED.to_string()));
             }
         };
 
@@ -127,18 +156,18 @@ impl DbMigrator {
             .run_migration_scripts(kind, config, &scripts, cancellation_token)
             .await
         {
-            RunOutcome::Cancelled => true,
+            RunOutcome::Cancelled => Ok(()),
             RunOutcome::Completed {
                 all_succeeded: true,
             } => {
                 info!("migration process executed successfully");
-                true
+                Ok(())
             }
             RunOutcome::Completed {
                 all_succeeded: false,
             } => {
-                error!("migration process executed with errors");
-                false
+                error!("{MIGRATION_FAILED}");
+                Err(Error::MigrationFailed(MIGRATION_FAILED.to_string()))
             }
         }
     }
