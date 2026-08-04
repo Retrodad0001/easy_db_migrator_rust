@@ -61,6 +61,8 @@ The user decides what goes here; nothing enters `Cargo.toml` before it is listed
 Documentation and example code worth consulting for the tooling above — the
 sources to check before guessing at an API.
 
+- <https://doc.rust-lang.org/book/>
+- <https://doc.rust-lang.org/cargo/>
 - **tokio** — <https://tokio.rs/> and <https://docs.rs/tokio/latest/tokio/>
 - **sqlx** — <https://docs.rs/sqlx/latest/sqlx/>
 - <https://crates.io/crates/tiberius>
