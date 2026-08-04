@@ -2,11 +2,10 @@ use chrono::{DateTime, Utc};
 use tiberius::{Client, Config, ToSql};
 use tokio::net::TcpStream;
 use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
-use tokio_util::sync::CancellationToken;
 
 use crate::{
-    CRATE_VERSION, backend::RunMigrationResult, config::MigrationConfiguration, error::Error,
-    script::Script,
+    CRATE_VERSION, backend::RunMigrationResult, cancellation::CancellationToken,
+    config::MigrationConfiguration, error::Error, script::Script,
 };
 
 const TRACKING_TABLE: &str = "DbMigrationsRun";

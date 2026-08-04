@@ -291,7 +291,11 @@ async fn when_nothing_goes_wrong_with_running_the_migrations_on_an_empty_databas
 
     test_expect_ok(
         migrator
-            .try_apply_migrations(DatabaseKind::Postgresql, &config, &CancellationToken::new())
+            .try_apply_migrations(
+                DatabaseKind::Postgresql,
+                &config,
+                &CancellationToken::new(false),
+            )
             .await,
         "expected the migration run to succeed",
     );
@@ -364,7 +368,11 @@ async fn can_skip_scripts_if_they_already_ran_before() {
     );
     test_expect_ok(
         migrator1
-            .try_apply_migrations(DatabaseKind::Postgresql, &config, &CancellationToken::new())
+            .try_apply_migrations(
+                DatabaseKind::Postgresql,
+                &config,
+                &CancellationToken::new(false),
+            )
             .await,
         "expected the first migration run to succeed",
     );
@@ -374,7 +382,11 @@ async fn can_skip_scripts_if_they_already_ran_before() {
 
     test_expect_ok(
         migrator2
-            .try_apply_migrations(DatabaseKind::Postgresql, &config, &CancellationToken::new())
+            .try_apply_migrations(
+                DatabaseKind::Postgresql,
+                &config,
+                &CancellationToken::new(false),
+            )
             .await,
         "expected the second migration run to succeed",
     );
@@ -440,7 +452,7 @@ async fn can_cancel_the_migration_process() {
         ["20211230_001_DoStuffScript.sql".to_string()],
     );
 
-    let cancellation_token = CancellationToken::new();
+    let cancellation_token = CancellationToken::new(false);
 
     test_expect_ok(
         migrator
@@ -502,7 +514,11 @@ async fn reports_failure_when_a_script_fails_and_stops_running_later_scripts() {
 
     let message = test_expect_migration_error(
         migrator
-            .try_apply_migrations(DatabaseKind::Postgresql, &config, &CancellationToken::new())
+            .try_apply_migrations(
+                DatabaseKind::Postgresql,
+                &config,
+                &CancellationToken::new(false),
+            )
             .await,
         "expected the migration run to report failure when a script fails",
     );
@@ -569,7 +585,7 @@ async fn reports_failure_and_runs_nothing_when_the_connection_string_is_empty() 
             .try_apply_migrations(
                 DatabaseKind::Postgresql,
                 &empty_connection_config,
-                &CancellationToken::new(),
+                &CancellationToken::new(false),
             )
             .await,
         "expected an empty connection string to report failure",
@@ -630,7 +646,11 @@ async fn reports_failure_when_the_scripts_could_not_be_loaded() {
 
     let message = test_expect_migration_error(
         migrator
-            .try_apply_migrations(DatabaseKind::Postgresql, &config, &CancellationToken::new())
+            .try_apply_migrations(
+                DatabaseKind::Postgresql,
+                &config,
+                &CancellationToken::new(false),
+            )
             .await,
         "expected the migration run to report failure when the scripts cannot be loaded",
     );
@@ -696,7 +716,11 @@ async fn reports_failure_when_the_tracking_table_cannot_be_created() {
 
     let message = test_expect_migration_error(
         migrator
-            .try_apply_migrations(DatabaseKind::Postgresql, &config, &CancellationToken::new())
+            .try_apply_migrations(
+                DatabaseKind::Postgresql,
+                &config,
+                &CancellationToken::new(false),
+            )
             .await,
         "expected the migration run to report failure when the tracking table cannot be created",
     );
@@ -817,7 +841,11 @@ async fn creating_a_database_that_already_exists_keeps_it_and_its_data() {
 
     test_expect_ok(
         migrator
-            .try_apply_migrations(DatabaseKind::Postgresql, &config, &CancellationToken::new())
+            .try_apply_migrations(
+                DatabaseKind::Postgresql,
+                &config,
+                &CancellationToken::new(false),
+            )
             .await,
         "expected the migration run to succeed against an already existing database",
     );

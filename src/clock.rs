@@ -8,7 +8,7 @@ pub trait ClockMock: Send + Sync {
 }
 
 /// The default [`ClockMock`], backed by the system clock.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SystemClock;
 
 impl ClockMock for SystemClock {

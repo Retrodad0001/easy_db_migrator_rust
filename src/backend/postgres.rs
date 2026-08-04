@@ -1,10 +1,9 @@
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Connection, Executor, PgConnection};
-use tokio_util::sync::CancellationToken;
 
 use crate::{
-    CRATE_VERSION, backend::RunMigrationResult, config::MigrationConfiguration, error::Error,
-    script::Script,
+    CRATE_VERSION, backend::RunMigrationResult, cancellation::CancellationToken,
+    config::MigrationConfiguration, error::Error, script::Script,
 };
 
 const TRACKING_TABLE: &str = "DbMigrationsRun";

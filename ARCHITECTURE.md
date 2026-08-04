@@ -37,9 +37,9 @@ The user decides what goes here; nothing enters `Cargo.toml` before it is listed
   ORM.
 - **tokio** — the async runtime everything above runs on. It is the only runtime
   the crate will take on; a second one is never added, tests included.
-- **tokio-util** — two things: `CancellationToken`, which the public API
-  re-exports so a caller can stop a run part-way, and the `compat` adapter that
-  lets tiberius accept a tokio `TcpStream`.
+- **tokio-util** — the `compat` adapter that lets tiberius accept a tokio
+  `TcpStream`, and nothing else. Cancelling a run part-way is this crate's own
+  `CancellationToken` over a `std` atomic, per the standard-library-first rule.
 - **chrono** — date and time types. Parses the date in a script filename and
   stamps `executed_at` on each tracking row.
 - **thiserror** — derives the single crate-wide `Error` enum in `error.rs`.
@@ -78,6 +78,16 @@ clippy`; the rules below are the ones no lint can check.
   its own, and no third database backend. Widening what this crate is starts by
   agreeing the change and rewriting Context; the code follows that, never the
   other way round.
+- **The standard library first** — anything the language or `std` already solves
+  is solved with them, not with a crate that wraps them. A dependency is taken on
+  only for what std has no answer to, and the Tooling section is where that gap
+  is named. Async is the case to reason from: `async`/`await`, `Future` and
+  `Poll` are language and `std` items
+  (<https://doc.rust-lang.org/book/ch17-00-async-await.html>), so they are
+  written directly and never reached through a crate's re-export of them; tokio
+  is present only for the part std genuinely lacks — an executor to drive those
+  futures, plus async I/O and timers. Every further crate is weighed the same
+  way before it is agreed: what in std was tried first, and what it could not do.
 - **Visibility is `pub(crate)` by default** — every function, method, and type is
   `pub(crate)` unless it is part of the crate's actual public API surface; only
   those are `pub`.
@@ -160,18 +170,18 @@ is listed below, together with how it is run in this repo.
   finds is reported and the user decides what to do about it — `rustup update` is
   never run, and a pinned `rust-toolchain.toml` never edited, without approval
   for that specific action.
-- **Every behaviour is proven by a test** — a feature is not done because it
-  compiles and appeared to work when run by hand against a database; it is done
-  when a test fails without it and passes with it. Shipping behaviour no test
-  exercises is the one thing this section exists to prevent.
-- **Every code path is exercised by an integration test** — the integration
-  suites are what prove the code does its job against a real database, so a
-  function, match arm, or error path that no integration test reaches counts as
-  untested even where a unit test covers it. Code nothing in `tests/` drives is
-  reported to the user as uncovered, together with a specific test proposed for
-  it: which suite it belongs in, the scenario it sets up, and what it asserts.
-  The test is proposed for review and never added unasked — the user decides
-  which tests get written. No tool enforces this one; it is checked by reading.
+- **Every behaviour and code path is exercised by an integration test** — a
+  feature is not done because it compiles and appeared to work when run by hand
+  against a database; it is done when a test fails without it and passes with
+  it. The integration suites are what prove that against a real database, so a
+  behaviour, function, match arm, or error path that no integration test reaches
+  counts as untested even where a unit test covers it. Shipping something no
+  test exercises is the one thing this section exists to prevent. Anything
+  nothing in `tests/` drives is reported to the user as uncovered, together with
+  a specific test proposed for it: which suite it belongs in, the scenario it
+  sets up, and what it asserts. The test is proposed for review and never added
+  unasked — the user decides which tests get written. No tool enforces this one;
+  it is checked by reading.
 - **Tests** — `cargo test` must finish with no failures and nothing skipped. An
   `#[ignore]`d test does not count as passing, and a run that executed zero tests
   is not evidence that anything works.
@@ -192,8 +202,3 @@ is listed below, together with how it is run in this repo.
   fail an `Err` whose message is asserted exactly and shown to be the same text
   the run logged. Checking one of the three passes happily while the other two
   are wrong.
-
-## Agent rules
-
-How an agent works in this repo — including that every gate in Quality checks
-must pass before a change counts as done — lives in `AGENTS.md`, not here.

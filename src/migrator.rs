@@ -1,8 +1,8 @@
-use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 use crate::{
     backend::{self, RunMigrationResult},
+    cancellation::CancellationToken,
     clock::{ClockMock, SystemClock},
     config::MigrationConfiguration,
     database_kind::DatabaseKind,
