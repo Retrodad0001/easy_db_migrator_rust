@@ -29,6 +29,7 @@ expected to work here.
   |---|---|
   | Formatting | ✅ `cargo fmt --check` exit 0 |
   | No warnings | ✅ clippy `--all-targets -D warnings` clean |
+  | Feature combinations | ✅ default, postgres-only, mssql-only all clean |
   | Tests | ✅ 18 passed, 0 failed, 0 ignored |
   | Integration container tests | ✅ mssql 9/9, postgres 9/9 |
   | Toolchain freshness | ⏭ weekly check already ran |
@@ -44,7 +45,7 @@ expected to work here.
   ran or was assumed. A failing gate's name is bolded so it is findable at a
   glance.
 
-  Every gate in the Quality checks section gets its own row — all seventeen of
+  Every gate in the Quality checks section gets its own row — all eighteen of
   them at the time of writing — named as that section names it and in the order
   it lists them. Gates are never collapsed into a shared row (`fmt / clippy /
   doc`) however alike their outcomes: the table is the checklist that proves each

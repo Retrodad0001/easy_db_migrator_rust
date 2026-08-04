@@ -37,11 +37,13 @@ pub enum Error {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
-    /// An error returned by the PostgreSQL driver.
+    /// An error returned by the PostgreSQL driver. Requires the `postgres` feature.
+    #[cfg(feature = "postgres")]
     #[error("postgres error: {0}")]
     Postgres(#[from] sqlx::Error),
 
-    /// An error returned by the SQL Server driver.
+    /// An error returned by the SQL Server driver. Requires the `mssql` feature.
+    #[cfg(feature = "mssql")]
     #[error("mssql error: {0}")]
     Mssql(#[from] tiberius::error::Error),
 }

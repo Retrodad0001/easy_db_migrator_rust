@@ -64,9 +64,11 @@ impl DbMigrator {
         config: &MigrationConfiguration,
     ) -> Result<(), Error> {
         let result = match kind {
+            #[cfg(feature = "postgres")]
             DatabaseKind::Postgresql => {
                 backend::postgres::try_delete_database_if_exists(config).await
             }
+            #[cfg(feature = "mssql")]
             DatabaseKind::Mssql => backend::mssql::try_delete_database_if_exists(config).await,
         };
 
@@ -114,9 +116,11 @@ impl DbMigrator {
         );
 
         let create_database_result = match kind {
+            #[cfg(feature = "postgres")]
             DatabaseKind::Postgresql => {
                 backend::postgres::try_create_database_if_missing(config).await
             }
+            #[cfg(feature = "mssql")]
             DatabaseKind::Mssql => backend::mssql::try_create_database_if_missing(config).await,
         };
         if let Err(error) = create_database_result {
@@ -127,7 +131,9 @@ impl DbMigrator {
         info!("setup database executed successfully");
 
         let tracking_table_result = match kind {
+            #[cfg(feature = "postgres")]
             DatabaseKind::Postgresql => backend::postgres::try_ensure_tracking_table(config).await,
+            #[cfg(feature = "mssql")]
             DatabaseKind::Mssql => backend::mssql::try_ensure_tracking_table(config).await,
         };
         if let Err(error) = tracking_table_result {
@@ -191,10 +197,12 @@ impl DbMigrator {
 
             let executed_at = self.clock.now_utc();
             let result = match kind {
+                #[cfg(feature = "postgres")]
                 DatabaseKind::Postgresql => {
                     backend::postgres::run_script(config, script, executed_at, cancellation_token)
                         .await
                 }
+                #[cfg(feature = "mssql")]
                 DatabaseKind::Mssql => {
                     backend::mssql::run_script(config, script, executed_at, cancellation_token)
                         .await

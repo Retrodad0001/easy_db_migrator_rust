@@ -28,18 +28,27 @@ The user decides what goes here; nothing enters `Cargo.toml` before it is listed
 - **PostgreSQL** — one of the two databases this tool migrates. It is a target,
   not this project's own datastore; the only thing the tool keeps there is its
   `DbMigrationsRun` tracking table.
-- **Microsoft SQL Server** — the other target database. Both backends are always
-  compiled in, so neither is hidden behind a Cargo feature.
-- **sqlx** — the PostgreSQL client. Migration scripts are plain SQL run through
-  the runtime query API; no ORM, and deliberately not the compile-time-checked
-  macros, because the database a migration targets does not exist at build time.
-- **tiberius** — the SQL Server client, chosen on the same terms: plain SQL, no
-  ORM.
+- **Microsoft SQL Server** — the other target database. Each backend is a Cargo
+  feature — `postgres` and `mssql` — and `default` enables both, so a consumer
+  that takes the crate normally gets what it always got. One that needs a single
+  backend takes it with `default-features = false` and leaves the other driver
+  out of the build entirely. At least one feature must be on: `lib.rs` stops the
+  build with a `compile_error!` when neither is, rather than producing a
+  `DatabaseKind` with no variants. The features gate drivers and nothing else —
+  a backend that is compiled in behaves exactly as it did before the split.
+- **sqlx** — the PostgreSQL client, optional behind the `postgres` feature.
+  Migration scripts are plain SQL run through the runtime query API; no ORM, and
+  deliberately not the compile-time-checked macros, because the database a
+  migration targets does not exist at build time.
+- **tiberius** — the SQL Server client, optional behind the `mssql` feature and
+  chosen on the same terms: plain SQL, no ORM.
 - **tokio** — the async runtime everything above runs on. It is the only runtime
   the crate will take on; a second one is never added, tests included.
 - **tokio-util** — the `compat` adapter that lets tiberius accept a tokio
-  `TcpStream`, and nothing else. Cancelling a run part-way is this crate's own
-  `CancellationToken` over a `std` atomic, per the standard-library-first rule.
+  `TcpStream`, and nothing else. It belongs to the `mssql` feature for that
+  reason, as does tokio's own `net` feature. Cancelling a run part-way is this
+  crate's own `CancellationToken` over a `std` atomic, per the
+  standard-library-first rule.
 - **chrono** — date and time types. Parses the date in a script filename and
   stamps `executed_at` on each tracking row.
 - **thiserror** — derives the single crate-wide `Error` enum in `error.rs`.
@@ -128,6 +137,22 @@ is listed below, together with how it is run in this repo.
   warnings, not merely a zero exit code. A warning is fixed at its cause, never
   baselined and never hidden behind an inline suppression; where a suppression is
   genuinely the right answer, it is agreed with the user first and states why.
+- **Feature combinations** — the backends are Cargo features, so a gate that ran
+  once against the default set has only checked one of three builds. `cargo
+  clippy --all-targets -- -D warnings` and `cargo doc --no-deps` each run three
+  times: default (both backends), `--no-default-features --features postgres`,
+  and `--no-default-features --features mssql`. `cargo test` is not repeated per
+  combination: `--all-targets` already compiles the test targets under each one,
+  and running a suite again under a single backend re-executes containers to
+  prove behaviour the default run has already proved, because the features gate
+  drivers and change no behaviour. A warning or a broken `cfg` that only shows
+  up under one backend is
+  exactly what a feature split introduces, and only the per-combination run finds
+  it. `--no-default-features`
+  alone must fail, with the `compile_error!` from `lib.rs` as the first error
+  reported; the type-inference errors that follow it are an empty `DatabaseKind`
+  cascading through the `match` sites and are expected. A build that fails that
+  way is a passing result for this gate, not a broken build.
 - **Markdown** — every `.md` file in the repo must pass `markdownlint`, run via
   Docker (`davidanson/markdownlint-cli2`) like the other containerised checks.
 - **Static analysis** — `semgrep` must report zero findings, run via Docker with
@@ -194,6 +219,11 @@ is listed below, together with how it is run in this repo.
   targets included. Docker has to be running: a container that would not start is
   a failed run, never a skipped check. Running one backend's suite says nothing
   about the other, and a suite that did not execute is never reported as passing.
+  Each suite is a `[[test]]` target with a `required-features` entry, so under a
+  single-backend build Cargo does not build the other one at all and `cargo test`
+  says nothing about it — silently, with no line in its output. That silence is
+  reported as not run. Both suites executing in full is what this gate wants, and
+  the default feature set is the build that does it.
 - **Integration tests assert every observable effect** — a container test proves
   what the run actually did, not merely that it finished, and checks all three of
   these every time. The database: the rows in the tracking table and the tables
