@@ -1,4 +1,14 @@
 //! Database migration library for PostgreSQL and SQL Server.
+//!
+//! Each backend is a Cargo feature: `postgres` and `mssql`, both enabled by
+//! default. A consumer that needs only one takes it with `default-features =
+//! false`, which leaves the other backend's driver out of the build entirely.
+//! At least one of the two must be enabled.
+
+#[cfg(not(any(feature = "postgres", feature = "mssql")))]
+compile_error!(
+    "easy_db_migrator_rust needs at least one backend feature enabled: \"postgres\", \"mssql\", or both"
+);
 
 mod backend;
 mod cancellation;
