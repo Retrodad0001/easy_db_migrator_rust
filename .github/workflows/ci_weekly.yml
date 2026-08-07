@@ -57,5 +57,20 @@ jobs:
       - name: Run unit tests
         run: cargo test --lib --features postgres,mssql
 
+      - name: Pre-pull test container images
+        run: |
+          for image in postgres:11-alpine mcr.microsoft.com/mssql/server:2022-CU14-ubuntu-22.04; do
+            for attempt in 1 2 3; do
+              if docker pull "$image"; then
+                break
+              fi
+              if [ "$attempt" -eq 3 ]; then
+                echo "failed to pull $image after 3 attempts" >&2
+                exit 1
+              fi
+              sleep 15
+            done
+          done
+
       - name: Run full test suite
         run: cargo test --features postgres,mssql
