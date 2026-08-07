@@ -59,7 +59,6 @@ within that date.
 
 ## Applying migrations
 
-
 ```rust
 use std::path::PathBuf;
 
@@ -93,7 +92,7 @@ Swap `DatabaseKind::Postgresql` for `DatabaseKind::Mssql` to target SQL
 Server;
 
 The `Vec::<String>::new()` passed to `DbMigrator::new` is the list of
-script filenames to exclude from this run. 
+script filenames to exclude from this run.
 
 ## Using it for integration testing
 
@@ -134,7 +133,6 @@ The migrator keeps one table, `DbMigrationsRun`, in the target database:
 | `executed_at` | When the script ran, in UTC |
 | `filename` | The script's filename, its identity |
 | `version` | Version of this crate that ran it |
-
 
 ## Alternatives
 
