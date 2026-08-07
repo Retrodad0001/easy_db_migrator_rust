@@ -235,8 +235,3 @@ impl DbMigrator {
         }
     }
 }
-
-//TODO fill readme
-//TODO add text github and some keyworld like in toml
-//TODO Add demo console or check code api and add other test not happy path
-//TODO Add action codeQL when public repo

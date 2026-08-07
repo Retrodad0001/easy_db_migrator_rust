@@ -42,33 +42,33 @@ jobs:
       - name: Check formatting
         run: cargo fmt --check
 
-      - name: Run clippy
-        run: cargo clippy --all-targets -- -D warnings
+      - name: Run clippy (both backends)
+        run: cargo clippy --all-targets --features postgres,mssql -- -D warnings
 
       - name: Run clippy (postgres backend only)
-        run: cargo clippy --all-targets --no-default-features --features postgres -- -D warnings
+        run: cargo clippy --all-targets --features postgres -- -D warnings
 
       - name: Run clippy (mssql backend only)
-        run: cargo clippy --all-targets --no-default-features --features mssql -- -D warnings
+        run: cargo clippy --all-targets --features mssql -- -D warnings
 
       - name: Check that no backend fails the build
         run: |
-          if cargo check --no-default-features 2>/dev/null; then
-            echo "expected --no-default-features to fail, but it built" >&2
+          if cargo check 2>/dev/null; then
+            echo "expected a build with no backend feature to fail, but it built" >&2
             exit 1
           fi
 
-      - name: Build docs
-        run: cargo doc --no-deps
+      - name: Build docs (both backends)
+        run: cargo doc --no-deps --features postgres,mssql
 
       - name: Build docs (postgres backend only)
-        run: cargo doc --no-deps --no-default-features --features postgres
+        run: cargo doc --no-deps --features postgres
 
       - name: Build docs (mssql backend only)
-        run: cargo doc --no-deps --no-default-features --features mssql
+        run: cargo doc --no-deps --features mssql
 
       - name: Run unit tests
-        run: cargo test --lib
+        run: cargo test --lib --features postgres,mssql
 
       - name: Run full test suite
-        run: cargo test
+        run: cargo test --features postgres,mssql

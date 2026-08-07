@@ -1,9 +1,9 @@
 //! Database migration library for PostgreSQL and SQL Server.
 //!
-//! Each backend is a Cargo feature: `postgres` and `mssql`, both enabled by
-//! default. A consumer that needs only one takes it with `default-features =
-//! false`, which leaves the other backend's driver out of the build entirely.
-//! At least one of the two must be enabled.
+//! Each backend is a Cargo feature: `postgres` and `mssql`. There is no default
+//! feature, so a consumer names the backend it wants and the other backend's
+//! driver stays out of the build entirely. Naming both is allowed; naming
+//! neither is a build error.
 
 #[cfg(not(any(feature = "postgres", feature = "mssql")))]
 compile_error!(

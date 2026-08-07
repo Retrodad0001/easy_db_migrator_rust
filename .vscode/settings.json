@@ -1,0 +1,13 @@
+{
+  // This crate has no default features and fails to build when no backend is
+  // named, so rust-analyzer must be told which backends to analyse. Without
+  // this it checks with zero features, hits the compile_error! in src/lib.rs,
+  // and reports a cascade of phantom errors in migrator.rs and
+  // database_kind.rs.
+  "rust-analyzer.cargo.features": ["postgres", "mssql"],
+
+  // Use clippy for on-save diagnostics so the editor shows the same lints CI
+  // enforces (see .github/workflows/ci.yml).
+  "rust-analyzer.check.command": "clippy",
+  "rust-analyzer.check.allTargets": true
+}

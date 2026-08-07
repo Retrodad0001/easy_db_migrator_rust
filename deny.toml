@@ -4,7 +4,11 @@
 
 [graph]
 targets = []
-all-features = false
+# No backend is enabled by default, so a graph built from the default feature set
+# contains neither sqlx nor tiberius and every skip below goes unmatched — the
+# check would pass without having looked at the drivers at all. Both backends are
+# enabled here so the graph is the one a consumer actually gets.
+all-features = true
 no-default-features = false
 
 [output]
