@@ -7,7 +7,14 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # both runners, because a green linux run says nothing about windows.
+    # the docker-dependent steps below stay linux-only: github windows
+    # runners cannot run linux containers, which testcontainers needs.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -31,47 +38,99 @@ jobs:
           tool: cargo-deny
 
       - name: Run cargo audit
-        run: cargo audit
+        shell: bash
+        run: |
+          echo "BEGIN Run cargo audit"
+          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END Run cargo audit - passed"; else echo "END Run cargo audit - FAILED"; fi' EXIT
+          cargo audit
 
       - name: Run cargo deny
-        run: cargo deny check
+        shell: bash
+        run: |
+          echo "BEGIN Run cargo deny"
+          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END Run cargo deny - passed"; else echo "END Run cargo deny - FAILED"; fi' EXIT
+          cargo deny check
 
       - name: Run Semgrep
-        run: docker run --rm --entrypoint semgrep -v "${{ github.workspace }}:/src" -w /src semgrep/semgrep --config p/owasp-top-ten --config p/security-audit --config p/0xdea .
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          echo "BEGIN Run Semgrep"
+          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END Run Semgrep - passed"; else echo "END Run Semgrep - FAILED"; fi' EXIT
+          docker run --rm --entrypoint semgrep -v "${{ github.workspace }}:/src" -w /src semgrep/semgrep --config p/owasp-top-ten --config p/security-audit --config p/0xdea .
 
       - name: Check formatting
-        run: cargo fmt --check
+        shell: bash
+        run: |
+          echo "BEGIN Check formatting"
+          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END Check formatting - passed"; else echo "END Check formatting - FAILED"; fi' EXIT
+          cargo fmt --check
 
       - name: Run clippy (both backends)
-        run: cargo clippy --all-targets --features postgres,mssql -- -D warnings
+        shell: bash
+        run: |
+          echo "BEGIN Run clippy (both backends)"
+          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END Run clippy (both backends) - passed"; else echo "END Run clippy (both backends) - FAILED"; fi' EXIT
+          cargo clippy --all-targets --features postgres,mssql -- -D warnings
 
       - name: Run clippy (postgres backend only)
-        run: cargo clippy --all-targets --features postgres -- -D warnings
+        shell: bash
+        run: |
+          echo "BEGIN Run clippy (postgres backend only)"
+          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END Run clippy (postgres backend only) - passed"; else echo "END Run clippy (postgres backend only) - FAILED"; fi' EXIT
+          cargo clippy --all-targets --features postgres -- -D warnings
 
       - name: Run clippy (mssql backend only)
-        run: cargo clippy --all-targets --features mssql -- -D warnings
+        shell: bash
+        run: |
+          echo "BEGIN Run clippy (mssql backend only)"
+          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END Run clippy (mssql backend only) - passed"; else echo "END Run clippy (mssql backend only) - FAILED"; fi' EXIT
+          cargo clippy --all-targets --features mssql -- -D warnings
 
       - name: Check that no backend fails the build
+        shell: bash
         run: |
+          echo "BEGIN Check that no backend fails the build"
+          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END Check that no backend fails the build - passed"; else echo "END Check that no backend fails the build - FAILED"; fi' EXIT
           if cargo check 2>/dev/null; then
             echo "expected a build with no backend feature to fail, but it built" >&2
             exit 1
           fi
 
       - name: Build docs (both backends)
-        run: cargo doc --no-deps --features postgres,mssql
+        shell: bash
+        run: |
+          echo "BEGIN Build docs (both backends)"
+          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END Build docs (both backends) - passed"; else echo "END Build docs (both backends) - FAILED"; fi' EXIT
+          cargo doc --no-deps --features postgres,mssql
 
       - name: Build docs (postgres backend only)
-        run: cargo doc --no-deps --features postgres
+        shell: bash
+        run: |
+          echo "BEGIN Build docs (postgres backend only)"
+          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END Build docs (postgres backend only) - passed"; else echo "END Build docs (postgres backend only) - FAILED"; fi' EXIT
+          cargo doc --no-deps --features postgres
 
       - name: Build docs (mssql backend only)
-        run: cargo doc --no-deps --features mssql
+        shell: bash
+        run: |
+          echo "BEGIN Build docs (mssql backend only)"
+          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END Build docs (mssql backend only) - passed"; else echo "END Build docs (mssql backend only) - FAILED"; fi' EXIT
+          cargo doc --no-deps --features mssql
 
       - name: Run unit tests
-        run: cargo test --lib --features postgres,mssql
+        shell: bash
+        run: |
+          echo "BEGIN Run unit tests"
+          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END Run unit tests - passed"; else echo "END Run unit tests - FAILED"; fi' EXIT
+          cargo test --lib --features postgres,mssql
 
       - name: Pre-pull test container images
+        if: runner.os == 'Linux'
+        shell: bash
         run: |
+          echo "BEGIN Pre-pull test container images"
+          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END Pre-pull test container images - passed"; else echo "END Pre-pull test container images - FAILED"; fi' EXIT
           for image in postgres:11-alpine mcr.microsoft.com/mssql/server:2022-CU14-ubuntu-22.04; do
             for attempt in 1 2 3; do
               if docker pull "$image"; then
@@ -86,4 +145,9 @@ jobs:
           done
 
       - name: Run full test suite
-        run: cargo test --features postgres,mssql
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          echo "BEGIN Run full test suite"
+          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END Run full test suite - passed"; else echo "END Run full test suite - FAILED"; fi' EXIT
+          cargo test --features postgres,mssql
