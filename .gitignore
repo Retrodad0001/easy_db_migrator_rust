@@ -26,3 +26,11 @@ ARCHITECTURE.md
 CLAUDE.md
 CLAUDE.local.md
 .claude/
+
+# This crate is a library, so its lockfile is not committed: consumers resolve
+# their own. It was also a trap while it was tracked - the crate is a member of
+# the workspace above this directory, so cargo here resolves that workspace's
+# lockfile and never this one, and the committed copy sat frozen while CI kept
+# reading it. That is how h2 0.4.15 stayed in CI after it had been updated
+# everywhere a developer would look.
+Cargo.lock
