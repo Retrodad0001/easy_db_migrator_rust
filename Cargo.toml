@@ -10,11 +10,8 @@ keywords = ["migration", "database", "postgres", "sqlserver", "sql", "Rust", "ru
 categories = ["database"]
 publish = false
 
-[profile.release]
-opt-level = "z"
-lto = true
-codegen-units = 1
-strip = true
+# [profile.release] lives in the workspace root at ../Cargo.toml. Cargo ignores
+# profiles declared by a non-root member and warns when it finds one.
 
 [lints.rust]
 missing_docs = "deny"
@@ -38,7 +35,7 @@ mssql = ["dep:tiberius", "dep:tokio-util", "tokio/net"]
 [dependencies]
 chrono = "0.4.45"
 sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-native-roots", "postgres", "chrono"], optional = true }
-thiserror = "2.0.19"
+thiserror = "2.0.20"
 tiberius = { version = "0.12.3", default-features = false, features = ["tds73", "chrono", "native-tls"], optional = true }
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "time", "sync"] }
 tokio-util = { version = "0.7.19", features = ["compat"], optional = true }
@@ -56,6 +53,9 @@ required-features = ["mssql"]
 
 [dev-dependencies]
 rand = "0.10.2"
+# held at 0.27.x by testcontainers-modules, whose latest release (0.15.0)
+# requires testcontainers ^0.27. 0.28 and modules 0.15 cannot resolve
+# together, so this moves when modules 0.16 ships.
 testcontainers = "0.27.3"
 testcontainers-modules = { version = "0.15.0", features = ["postgres", "mssql_server"] }
 tracing-test = { version = "0.2.6", features = ["no-env-filter"] }
