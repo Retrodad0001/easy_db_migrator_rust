@@ -57,6 +57,11 @@ migrations/
 They run ordered by date first, then by the three-digit sequence number
 within that date.
 
+`Script::parse` is the same parser the migrator uses, exposed so a build step
+or a test can check a filename without running anything. It returns a `Script`
+whose `filename`, `content`, `date_part` and `sequence_part` are the pieces it
+read, or an `Error` naming what was wrong with the name.
+
 ## Applying migrations
 
 ```rust
@@ -88,8 +93,10 @@ async fn main() -> Result<(), Error> {
 }
 ```
 
+`CancellationToken::new(false)` starts a run that is not cancelled.
+
 Swap `DatabaseKind::Postgresql` for `DatabaseKind::Mssql` to target SQL
-Server;
+Server.
 
 The `Vec::<String>::new()` passed to `DbMigrator::new` is the list of
 script filenames to exclude from this run.
@@ -121,7 +128,11 @@ containers.
 
 `DbMigrator::with_clock_mock` takes a `ClockMock` in place of the system
 clock, so a test can pin `executed_at` to a fixed instant and assert the
-tracking rows exactly.
+tracking rows exactly. `DbMigrator::new` uses `SystemClock`, the real clock,
+which is what every non-test caller wants.
+
+`MigrationConfiguration` reads back what it was built with, through
+`connection_string`, `database_name` and `scripts_directory`.
 
 ## What gets tracked
 
