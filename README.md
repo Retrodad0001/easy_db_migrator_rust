@@ -125,14 +125,6 @@ parallel. `tests/postgres_integration_tests.rs` and
 `tests/mssql_integration_tests.rs` do exactly this against real
 containers.
 
-`DbMigrator::with_clock_mock` takes a `ClockMock` in place of the system
-clock, so a test can pin `executed_at` to a fixed instant and assert the
-tracking rows exactly. `DbMigrator::new` uses `SystemClock`, the real clock,
-which is what every non-test caller wants.
-
-`MigrationConfiguration` reads back what it was built with, through
-`connection_string`, `database_name` and `scripts_directory`.
-
 ## What gets tracked
 
 The migrator keeps one table, `DbMigrationsRun`, in the target database:
