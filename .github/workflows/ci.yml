@@ -4,6 +4,10 @@ on:
   push:
   pull_request:
     branches: [main]
+  # friday morning, the cadence the separate weekly workflow used to run on
+  schedule:
+    - cron: "0 7 * * 5"
+  workflow_dispatch:
 
 jobs:
   test:
@@ -32,10 +36,10 @@ jobs:
         with:
           tool: cargo-audit
 
-      - name: Install cargo-deny
+      - name: Install cargo-deny and cargo-outdated
         uses: taiki-e/install-action@7572810d7dd469b651bb7793945692cf78da5dd7 # v2
         with:
-          tool: cargo-deny
+          tool: cargo-deny,cargo-outdated
 
       - name: Run cargo audit
         shell: bash
@@ -151,3 +155,21 @@ jobs:
           echo "BEGIN Run full test suite"
           trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END Run full test suite - passed"; else echo "END Run full test suite - FAILED"; fi' EXIT
           cargo test --features postgres,mssql
+
+      # Freshness is a cadence check, not something to run on every push. It
+      # runs on both runners, like everything else in this job.
+      - name: Run cargo outdated
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          echo "BEGIN Run cargo outdated"
+          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END Run cargo outdated - passed"; else echo "END Run cargo outdated - FAILED"; fi' EXIT
+          cargo outdated --root-deps-only --exclude testcontainers --exit-code 1
+
+      - name: Report transitive dependency drift
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          echo "BEGIN Report transitive dependency drift"
+          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END Report transitive dependency drift - passed"; else echo "END Report transitive dependency drift - FAILED"; fi' EXIT
+          cargo outdated --depth 3 --exclude testcontainers
