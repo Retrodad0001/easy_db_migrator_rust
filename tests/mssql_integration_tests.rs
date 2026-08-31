@@ -1,15 +1,20 @@
 #![allow(clippy::panic, missing_docs)]
 
 use std::path::PathBuf;
+use std::sync::atomic::AtomicU32;
+use std::sync::atomic::Ordering;
+use std::time::SystemTime;
+use std::time::UNIX_EPOCH;
 
 use chrono::{DateTime, TimeZone, Utc};
 use easy_db_migrator_rust::{
     CancellationToken, ClockMock, DatabaseKind, DbMigrator, Error, MigrationConfiguration,
 };
-use rand::RngExt;
-use testcontainers_modules::mssql_server::MssqlServer;
-use testcontainers_modules::testcontainers::ContainerAsync;
-use testcontainers_modules::testcontainers::runners::AsyncRunner;
+use testcontainers::ContainerAsync;
+use testcontainers::GenericImage;
+use testcontainers::ImageExt;
+use testcontainers::core::WaitFor;
+use testcontainers::runners::AsyncRunner;
 use tiberius::{Client, Config};
 use tokio::net::TcpStream;
 use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
@@ -89,9 +94,15 @@ fn test_failure_fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mssql/test_scripts_failure")
 }
 
-fn test_get_random_database_name() -> String {
-    let suffix: u32 = rand::rng().random_range(100_000..999_999);
-    format!("testmssql{suffix}")
+fn test_unique_database_name() -> String {
+    static NEXT: AtomicU32 = AtomicU32::new(0);
+
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since_epoch| since_epoch.subsec_nanos());
+    let sequence = NEXT.fetch_add(1, Ordering::Relaxed);
+
+    format!("testmssql{}{nanos}{sequence}", std::process::id())
 }
 
 fn test_datetime(
@@ -325,11 +336,17 @@ async fn test_fetch_tracking_rows(config: &MigrationConfiguration) -> Vec<Tracki
     tracking_rows
 }
 
-async fn test_start_mssql() -> (ContainerAsync<MssqlServer>, String) {
+async fn test_start_mssql() -> (ContainerAsync<GenericImage>, String) {
+    test_sweep_leftover_containers();
+
     let container = test_expect_ok(
-        MssqlServer::default()
-            .with_accept_eula()
-            .with_sa_password(SA_PASSWORD)
+        GenericImage::new(MSSQL_IMAGE, MSSQL_TAG)
+            .with_wait_for(WaitFor::message_on_stdout(MSSQL_READY))
+            .with_wait_for(WaitFor::message_on_stdout(MSSQL_RECOVERED))
+            .with_env_var("ACCEPT_EULA", "Y")
+            .with_env_var("MSSQL_PID", "Developer")
+            .with_env_var("MSSQL_SA_PASSWORD", SA_PASSWORD)
+            .with_label(TEST_LABEL, "1")
             .start()
             .await,
         "failed to start mssql container",
@@ -351,13 +368,13 @@ async fn test_start_mssql() -> (ContainerAsync<MssqlServer>, String) {
 #[cfg(test)]
 #[tokio::test]
 #[traced_test]
-async fn when_nothing_goes_wrong_with_running_the_migrations_on_an_empty_database() {
+async fn test_when_nothing_goes_wrong_with_running_the_migrations_on_an_empty_database() {
     let (_container, connection_string) = test_start_mssql().await;
 
     let config = test_expect_ok(
         MigrationConfiguration::new(
             connection_string,
-            test_get_random_database_name(),
+            test_unique_database_name(),
             test_fixtures_dir(),
         ),
         "invalid migration configuration",
@@ -417,13 +434,13 @@ async fn when_nothing_goes_wrong_with_running_the_migrations_on_an_empty_databas
 #[cfg(test)]
 #[tokio::test]
 #[traced_test]
-async fn can_skip_scripts_if_they_already_ran_before() {
+async fn test_can_skip_scripts_if_they_already_ran_before() {
     let (_container, connection_string) = test_start_mssql().await;
 
     let config = test_expect_ok(
         MigrationConfiguration::new(
             connection_string,
-            test_get_random_database_name(),
+            test_unique_database_name(),
             test_fixtures_dir(),
         ),
         "invalid migration configuration",
@@ -492,13 +509,13 @@ async fn can_skip_scripts_if_they_already_ran_before() {
 #[cfg(test)]
 #[tokio::test]
 #[traced_test]
-async fn can_cancel_the_migration_process() {
+async fn test_can_cancel_the_migration_process() {
     let (_container, connection_string) = test_start_mssql().await;
 
     let config = test_expect_ok(
         MigrationConfiguration::new(
             connection_string,
-            test_get_random_database_name(),
+            test_unique_database_name(),
             test_fixtures_dir(),
         ),
         "invalid migration configuration",
@@ -539,13 +556,13 @@ async fn can_cancel_the_migration_process() {
 #[cfg(test)]
 #[tokio::test]
 #[traced_test]
-async fn reports_failure_when_a_script_fails_and_stops_running_later_scripts() {
+async fn test_reports_failure_when_a_script_fails_and_stops_running_later_scripts() {
     let (_container, connection_string) = test_start_mssql().await;
 
     let config = test_expect_ok(
         MigrationConfiguration::new(
             connection_string,
-            test_get_random_database_name(),
+            test_unique_database_name(),
             test_failure_fixtures_dir(),
         ),
         "invalid migration configuration",
@@ -595,9 +612,9 @@ async fn reports_failure_when_a_script_fails_and_stops_running_later_scripts() {
 #[cfg(test)]
 #[tokio::test]
 #[traced_test]
-async fn reports_failure_and_runs_nothing_when_the_connection_string_is_empty() {
+async fn test_reports_failure_and_runs_nothing_when_the_connection_string_is_empty() {
     let (_container, connection_string) = test_start_mssql().await;
-    let database_name = test_get_random_database_name();
+    let database_name = test_unique_database_name();
 
     let verification_config = test_expect_ok(
         MigrationConfiguration::new(
@@ -646,7 +663,7 @@ async fn reports_failure_and_runs_nothing_when_the_connection_string_is_empty() 
 #[cfg(test)]
 #[tokio::test]
 #[traced_test]
-async fn reports_failure_when_the_scripts_could_not_be_loaded() {
+async fn test_reports_failure_when_the_scripts_could_not_be_loaded() {
     let (_container, connection_string) = test_start_mssql().await;
 
     let missing_scripts_dir =
@@ -655,7 +672,7 @@ async fn reports_failure_when_the_scripts_could_not_be_loaded() {
     let config = test_expect_ok(
         MigrationConfiguration::new(
             connection_string,
-            test_get_random_database_name(),
+            test_unique_database_name(),
             missing_scripts_dir,
         ),
         "invalid migration configuration",
@@ -710,13 +727,13 @@ async fn reports_failure_when_the_scripts_could_not_be_loaded() {
 #[cfg(test)]
 #[tokio::test]
 #[traced_test]
-async fn reports_failure_when_the_tracking_table_cannot_be_created() {
+async fn test_reports_failure_when_the_tracking_table_cannot_be_created() {
     let (_container, connection_string) = test_start_mssql().await;
 
     let config = test_expect_ok(
         MigrationConfiguration::new(
             connection_string,
-            test_get_random_database_name(),
+            test_unique_database_name(),
             test_fixtures_dir(),
         ),
         "invalid migration configuration",
@@ -763,13 +780,13 @@ async fn reports_failure_when_the_tracking_table_cannot_be_created() {
 #[cfg(test)]
 #[tokio::test]
 #[traced_test]
-async fn deleting_a_database_that_does_not_exist_is_a_no_op() {
+async fn test_deleting_a_database_that_does_not_exist_is_a_no_op() {
     let (_container, connection_string) = test_start_mssql().await;
 
     let config = test_expect_ok(
         MigrationConfiguration::new(
             connection_string,
-            test_get_random_database_name(),
+            test_unique_database_name(),
             test_fixtures_dir(),
         ),
         "invalid migration configuration",
@@ -804,13 +821,13 @@ async fn deleting_a_database_that_does_not_exist_is_a_no_op() {
 #[cfg(test)]
 #[tokio::test]
 #[traced_test]
-async fn creating_a_database_that_already_exists_keeps_it_and_its_data() {
+async fn test_creating_a_database_that_already_exists_keeps_it_and_its_data() {
     let (_container, connection_string) = test_start_mssql().await;
 
     let config = test_expect_ok(
         MigrationConfiguration::new(
             connection_string,
-            test_get_random_database_name(),
+            test_unique_database_name(),
             test_fixtures_dir(),
         ),
         "invalid migration configuration",
@@ -856,4 +873,34 @@ async fn creating_a_database_that_already_exists_keeps_it_and_its_data() {
         3,
         "expected all three fixture scripts to be tracked, got {rows:#?}"
     );
+}
+
+const MSSQL_IMAGE: &str = "mcr.microsoft.com/mssql/server";
+const MSSQL_TAG: &str = "2022-CU14-ubuntu-22.04";
+const MSSQL_READY: &str = "SQL Server is now ready for client connections";
+const MSSQL_RECOVERED: &str = "Recovery is complete";
+const TEST_LABEL: &str = "easy_db_migrator_rust_mssql_test";
+
+fn test_sweep_leftover_containers() {
+    static SWEPT: std::sync::Once = std::sync::Once::new();
+
+    SWEPT.call_once(|| {
+        let listed = std::process::Command::new("docker")
+            .args(["ps", "-aq", "--filter", &format!("label={TEST_LABEL}=1")])
+            .output();
+
+        let Ok(listed) = listed else {
+            return;
+        };
+        let Ok(ids) = String::from_utf8(listed.stdout) else {
+            return;
+        };
+
+        for id in ids.split_whitespace() {
+            eprintln!("removing container {id} left behind by an earlier run");
+            let _ = std::process::Command::new("docker")
+                .args(["rm", "-f", id])
+                .output();
+        }
+    });
 }

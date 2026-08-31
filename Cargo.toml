@@ -52,11 +52,6 @@ path = "tests/mssql_integration_tests.rs"
 required-features = ["mssql"]
 
 [dev-dependencies]
-rand = "0.10.2"
-# held at 0.27.x by testcontainers-modules, whose latest release (0.15.0)
-# requires testcontainers ^0.27. 0.28 and modules 0.15 cannot resolve
-# together, so this moves when modules 0.16 ships.
-testcontainers = "0.27.3"
-testcontainers-modules = { version = "0.15.0", features = ["postgres", "mssql_server"] }
+testcontainers = "0.28.0"
 tracing-test = { version = "0.2.6", features = ["no-env-filter"] }
 
