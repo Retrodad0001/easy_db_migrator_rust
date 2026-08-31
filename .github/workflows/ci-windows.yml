@@ -1,24 +1,16 @@
-name: CI
+name: CI Windows
 
 on:
   push:
   pull_request:
     branches: [main]
-  # friday morning, the cadence the separate weekly workflow used to run on
   schedule:
     - cron: "0 7 * * 5"
   workflow_dispatch:
 
 jobs:
   test:
-    # both runners, because a green linux run says nothing about windows.
-    # the docker-dependent steps below stay linux-only: github windows
-    # runners cannot run linux containers, which testcontainers needs.
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
+    runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -54,14 +46,6 @@ jobs:
           echo "BEGIN Run cargo deny"
           trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END Run cargo deny - passed"; else echo "END Run cargo deny - FAILED"; fi' EXIT
           cargo deny check
-
-      - name: Run Semgrep
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          echo "BEGIN Run Semgrep"
-          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END Run Semgrep - passed"; else echo "END Run Semgrep - FAILED"; fi' EXIT
-          docker run --rm --entrypoint semgrep -v "${{ github.workspace }}:/src" -w /src semgrep/semgrep --config p/owasp-top-ten --config p/security-audit --config p/0xdea .
 
       - name: Check formatting
         shell: bash
@@ -128,30 +112,3 @@ jobs:
           echo "BEGIN Run unit tests"
           trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END Run unit tests - passed"; else echo "END Run unit tests - FAILED"; fi' EXIT
           cargo test --lib --features postgres,mssql
-
-      - name: Pre-pull test container images
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          echo "BEGIN Pre-pull test container images"
-          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END Pre-pull test container images - passed"; else echo "END Pre-pull test container images - FAILED"; fi' EXIT
-          for image in postgres:11-alpine mcr.microsoft.com/mssql/server:2022-CU14-ubuntu-22.04; do
-            for attempt in 1 2 3; do
-              if docker pull "$image"; then
-                break
-              fi
-              if [ "$attempt" -eq 3 ]; then
-                echo "failed to pull $image after 3 attempts" >&2
-                exit 1
-              fi
-              sleep 15
-            done
-          done
-
-      - name: Run full test suite
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          echo "BEGIN Run full test suite"
-          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END Run full test suite - passed"; else echo "END Run full test suite - FAILED"; fi' EXIT
-          cargo test --features postgres,mssql

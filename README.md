@@ -1,6 +1,7 @@
 # easy_db_migrator_rust
 
-[![CI](https://github.com/Retrodad0001/easy_db_migrator_rust/actions/workflows/ci.yml/badge.svg)](https://github.com/Retrodad0001/easy_db_migrator_rust/actions/workflows/ci.yml)
+[![CI Linux](https://github.com/Retrodad0001/easy_db_migrator_rust/actions/workflows/ci-linux.yml/badge.svg)](https://github.com/Retrodad0001/easy_db_migrator_rust/actions/workflows/ci-linux.yml)
+[![CI Windows](https://github.com/Retrodad0001/easy_db_migrator_rust/actions/workflows/ci-windows.yml/badge.svg)](https://github.com/Retrodad0001/easy_db_migrator_rust/actions/workflows/ci-windows.yml)
 
 A lightweight, plain-SQL database migration library for PostgreSQL and
 Microsoft SQL Server.
