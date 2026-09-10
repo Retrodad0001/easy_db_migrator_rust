@@ -264,7 +264,7 @@ async fn test_fetch_tracking_rows(config: &MigrationConfiguration) -> Vec<Tracki
 #[cfg(test)]
 #[tokio::test]
 #[traced_test]
-async fn test_when_nothing_goes_wrong_with_running_the_migrations_on_an_empty_database() {
+async fn test_given_empty_database_when_migrations_run_then_every_script_is_applied_and_tracked() {
     test_sweep_leftover_containers();
 
     let container = test_expect_ok(
@@ -353,7 +353,7 @@ async fn test_when_nothing_goes_wrong_with_running_the_migrations_on_an_empty_da
 #[cfg(test)]
 #[tokio::test]
 #[traced_test]
-async fn test_can_skip_scripts_if_they_already_ran_before() {
+async fn test_given_scripts_already_applied_when_migrations_run_again_then_they_are_skipped() {
     test_sweep_leftover_containers();
 
     let container = test_expect_ok(
@@ -454,7 +454,7 @@ async fn test_can_skip_scripts_if_they_already_ran_before() {
 #[cfg(test)]
 #[tokio::test]
 #[traced_test]
-async fn test_can_cancel_the_migration_process() {
+async fn test_given_cancelled_token_when_migrations_run_then_the_run_stops() {
     test_sweep_leftover_containers();
 
     let container = test_expect_ok(
@@ -519,7 +519,8 @@ async fn test_can_cancel_the_migration_process() {
 #[cfg(test)]
 #[tokio::test]
 #[traced_test]
-async fn test_reports_failure_when_a_script_fails_and_stops_running_later_scripts() {
+async fn test_given_failing_script_when_migrations_run_then_failure_is_reported_and_later_scripts_do_not_run()
+ {
     test_sweep_leftover_containers();
 
     let container = test_expect_ok(
@@ -597,7 +598,8 @@ async fn test_reports_failure_when_a_script_fails_and_stops_running_later_script
 #[cfg(test)]
 #[tokio::test]
 #[traced_test]
-async fn test_reports_failure_and_runs_nothing_when_the_connection_string_is_empty() {
+async fn test_given_blank_connection_string_when_migrations_run_then_failure_is_reported_and_nothing_runs()
+ {
     test_sweep_leftover_containers();
 
     let container = test_expect_ok(
@@ -666,7 +668,7 @@ async fn test_reports_failure_and_runs_nothing_when_the_connection_string_is_emp
 #[cfg(test)]
 #[tokio::test]
 #[traced_test]
-async fn test_reports_failure_when_the_scripts_could_not_be_loaded() {
+async fn test_given_scripts_that_cannot_be_loaded_when_migrations_run_then_failure_is_reported() {
     test_sweep_leftover_containers();
 
     let container = test_expect_ok(
@@ -752,7 +754,8 @@ async fn test_reports_failure_when_the_scripts_could_not_be_loaded() {
 #[cfg(test)]
 #[tokio::test]
 #[traced_test]
-async fn test_reports_failure_when_the_tracking_table_cannot_be_created() {
+async fn test_given_database_refuses_connections_when_migrations_run_then_tracking_table_failure_is_reported()
+ {
     test_sweep_leftover_containers();
 
     let container = test_expect_ok(
@@ -827,7 +830,7 @@ async fn test_reports_failure_when_the_tracking_table_cannot_be_created() {
 #[cfg(test)]
 #[tokio::test]
 #[traced_test]
-async fn test_deleting_a_database_that_does_not_exist_is_a_no_op() {
+async fn test_given_no_database_when_delete_runs_then_nothing_changes() {
     test_sweep_leftover_containers();
 
     let container = test_expect_ok(
@@ -886,7 +889,7 @@ async fn test_deleting_a_database_that_does_not_exist_is_a_no_op() {
 #[cfg(test)]
 #[tokio::test]
 #[traced_test]
-async fn test_creating_a_database_that_already_exists_keeps_it_and_its_data() {
+async fn test_given_database_with_data_when_migrations_run_then_its_data_is_kept() {
     test_sweep_leftover_containers();
 
     let container = test_expect_ok(
@@ -963,7 +966,7 @@ async fn test_creating_a_database_that_already_exists_keeps_it_and_its_data() {
 }
 
 const POSTGRES_IMAGE: &str = "postgres";
-const POSTGRES_TAG: &str = "11-alpine";
+const POSTGRES_TAG: &str = "17-alpine";
 const POSTGRES_READY: &str = "database system is ready to accept connections";
 const TEST_LABEL: &str = "easy_db_migrator_rust_postgres_test";
 

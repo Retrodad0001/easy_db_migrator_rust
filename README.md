@@ -1,6 +1,5 @@
 # easy_db_migrator_rust
 
-[![CI Linux](https://github.com/Retrodad0001/easy_db_migrator_rust/actions/workflows/ci-linux.yml/badge.svg)](https://github.com/Retrodad0001/easy_db_migrator_rust/actions/workflows/ci-linux.yml)
 [![CI Windows](https://github.com/Retrodad0001/easy_db_migrator_rust/actions/workflows/ci-windows.yml/badge.svg)](https://github.com/Retrodad0001/easy_db_migrator_rust/actions/workflows/ci-windows.yml)
 
 A lightweight, plain-SQL database migration library for PostgreSQL and
@@ -101,6 +100,18 @@ Server.
 The `Vec::<String>::new()` passed to `DbMigrator::new` is the list of
 script filenames to exclude from this run.
 
+`MigrationConfiguration::new` returns `Error::InvalidConfig` when the database
+name is empty or has more than one word. `connection_string`,
+`database_name` and `scripts_directory` return the values it was built with.
+
+## Cancelling a run
+
+`CancellationToken::cancel` stops a run before its next script. The run checks
+the token between scripts, so a script is either applied in full or not at
+all. Clones of a token share one flag, so a clone in another task cancels the
+same run. `CancellationToken::is_cancelled` returns whether `cancel` was
+called on the token or on a clone of it.
+
 ## Using it for integration testing
 
 Delete the database first, so each test starts from a clean one:
@@ -126,6 +137,26 @@ parallel. `tests/postgres_integration_tests.rs` and
 `tests/mssql_integration_tests.rs` do exactly this against real
 containers.
 
+To pin `executed_at` to a fixed time in a test, build the migrator with
+`DbMigrator::with_clock_mock` and a type that implements `ClockMock`.
+`DbMigrator::new` uses `SystemClock`, the system clock, and application code
+uses `DbMigrator::new`:
+
+```rust
+use chrono::{DateTime, Utc};
+use easy_db_migrator_rust::{ClockMock, DbMigrator};
+
+struct FixedClock;
+
+impl ClockMock for FixedClock {
+    fn now_utc(&self) -> DateTime<Utc> {
+        DateTime::UNIX_EPOCH
+    }
+}
+
+let migrator = DbMigrator::with_clock_mock(FixedClock, Vec::<String>::new());
+```
+
 ## What gets tracked
 
 The migrator keeps one table, `DbMigrationsRun`, in the target database:
@@ -136,6 +167,20 @@ The migrator keeps one table, `DbMigrationsRun`, in the target database:
 | `executed_at` | When the script ran, in UTC |
 | `filename` | The script's filename, its identity |
 | `version` | Version of this crate that ran it |
+
+## Errors
+
+Every call that can fail returns `Error`:
+
+| Variant | Meaning |
+| --- | --- |
+| `MigrationFailed` | A migration step failed, with the `tracing` text |
+| `InvalidConfig` | The `MigrationConfiguration` is not valid |
+| `InvalidScriptName` | `filename` does not match; `reason` says why |
+| `ScriptsDirectory` | `path` could not be read; `source` is the I/O error |
+| `Io` | A general I/O error, such as a failed TCP connection |
+| `Postgres` | A PostgreSQL driver error, with the `postgres` feature |
+| `Mssql` | A SQL Server driver error, with the `mssql` feature |
 
 ## Alternatives
 
