@@ -1,7 +1,5 @@
 # easy_db_migrator_rust
 
-[![CI Windows](https://github.com/Retrodad0001/easy_db_migrator_rust/actions/workflows/ci-windows.yml/badge.svg)](https://github.com/Retrodad0001/easy_db_migrator_rust/actions/workflows/ci-windows.yml)
-
 A lightweight, plain-SQL database migration library for PostgreSQL and
 Microsoft SQL Server.
 
@@ -20,6 +18,11 @@ runs against it, and drops it again afterwards.
 
 ## Installing
 
+The crate builds only inside its cargo workspace, `workspace_business`.
+The workspace root holds the edition, the dependency versions, the lints
+and the release profile, and this crate takes all four from it. A git
+dependency on this repository alone does not build.
+
 Each backend is a Cargo feature, and you name the one you want:
 
 | Feature | Backend | Driver |
@@ -27,19 +30,21 @@ Each backend is a Cargo feature, and you name the one you want:
 | `postgres` | PostgreSQL | `sqlx` |
 | `mssql` | Microsoft SQL Server | `tiberius` |
 
-```toml
-[dependencies.easy_db_migrator_rust]
-git = "https://github.com/Retrodad0001/easy_db_migrator_rust"
-features = ["postgres"]
-```
-
-Name both if you migrate both:
+The workspace root names the crate once, by its path:
 
 ```toml
-[dependencies.easy_db_migrator_rust]
-git = "https://github.com/Retrodad0001/easy_db_migrator_rust"
-features = ["postgres", "mssql"]
+[workspace.dependencies]
+easy_db_migrator_rust = { path = "easy_db_migrator_rust" }
 ```
+
+A member of the workspace takes it from the root, with its backends:
+
+```toml
+[dependencies]
+easy_db_migrator_rust = { workspace = true, features = ["postgres"] }
+```
+
+Name both if you migrate both: `features = ["postgres", "mssql"]`.
 
 ## Naming your scripts
 
@@ -54,108 +59,77 @@ migrations/
 ```
 
 They run ordered by date first, then by the three-digit sequence number
-within that date.
-
-`Script::parse` is the same parser the migrator uses, exposed so a build step
-or a test can check a filename without running anything. It returns a `Script`
-whose `filename`, `content`, `date_part` and `sequence_part` are the pieces it
-read, or an `Error` naming what was wrong with the name.
+within that date. A file whose name does not match makes the run fail with
+`ErrorKind::MigrationFailed`.
 
 ## Applying migrations
 
 ```rust
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 
 use easy_db_migrator_rust::{
-    CancellationToken, DatabaseKind, DbMigrator, Error, MigrationConfiguration,
+    DatabaseKind, ErrorKind, MigrationConfiguration, try_apply_migrations,
 };
 
 #[tokio::main]
-async fn main() -> Result<(), Error> {
-    let config = MigrationConfiguration::new(
+async fn main() -> Result<(), ErrorKind> {
+    let migration_configuration = MigrationConfiguration::new(
         "postgres://postgres:postgres@localhost:5432",
         "workout",
         PathBuf::from("migrations"),
+        Vec::<String>::new(),
     )?;
 
-    let migrator = DbMigrator::new(Vec::<String>::new());
-
-    migrator
-        .try_apply_migrations(
-            DatabaseKind::Postgresql,
-            &config,
-            &CancellationToken::new(false),
-        )
-        .await?;
+    try_apply_migrations(
+        DatabaseKind::Postgresql,
+        &migration_configuration,
+        &AtomicBool::new(false),
+    )
+    .await?;
 
     Ok(())
 }
 ```
 
-`CancellationToken::new(false)` starts a run that is not cancelled.
+`AtomicBool::new(false)` starts a run that is not cancelled.
 
 Swap `DatabaseKind::Postgresql` for `DatabaseKind::Mssql` to target SQL
 Server.
 
-The `Vec::<String>::new()` passed to `DbMigrator::new` is the list of
-script filenames to exclude from this run.
+The `Vec::<String>::new()` passed to `MigrationConfiguration::new` is the
+list of script filenames to exclude from the run.
 
-`MigrationConfiguration::new` returns `Error::InvalidConfig` when the database
-name is empty or has more than one word. `connection_string`,
-`database_name` and `scripts_directory` return the values it was built with.
+`MigrationConfiguration::new` returns `ErrorKind::InvalidConfig` when the
+connection string is blank, or when the database name is empty or has more
+than one word.
 
 ## Cancelling a run
 
-`CancellationToken::cancel` stops a run before its next script. The run checks
-the token between scripts, so a script is either applied in full or not at
-all. Clones of a token share one flag, so a clone in another task cancels the
-same run. `CancellationToken::is_cancelled` returns whether `cancel` was
-called on the token or on a clone of it.
+Store `true` in the `AtomicBool` to stop a run before its next script. The
+run reads the flag between scripts, so a script is either applied in full or
+not at all. To cancel from another task, share the flag through an
+`Arc<AtomicBool>` and pass a reference to it to the run.
 
 ## Using it for integration testing
 
 Delete the database first, so each test starts from a clean one:
 
 ```rust
-let migrator = DbMigrator::new(Vec::<String>::new());
-
-migrator
-    .try_delete_database_if_exists(DatabaseKind::Postgresql, &config)
+try_delete_database_if_exists(DatabaseKind::Postgresql, &migration_configuration)
     .await?;
 
-migrator
-    .try_apply_migrations(
-        DatabaseKind::Postgresql,
-        &config,
-        &CancellationToken::new(false),
-    )
-    .await?;
+try_apply_migrations(
+    DatabaseKind::Postgresql,
+    &migration_configuration,
+    &AtomicBool::new(false),
+)
+.await?;
 ```
 
 Give each test its own randomly named database and the suite can run in
-parallel. `tests/postgres_integration_tests.rs` and
-`tests/mssql_integration_tests.rs` do exactly this against real
+parallel. `tests/integration_tests.rs` does exactly this against real
 containers.
-
-To pin `executed_at` to a fixed time in a test, build the migrator with
-`DbMigrator::with_clock_mock` and a type that implements `ClockMock`.
-`DbMigrator::new` uses `SystemClock`, the system clock, and application code
-uses `DbMigrator::new`:
-
-```rust
-use chrono::{DateTime, Utc};
-use easy_db_migrator_rust::{ClockMock, DbMigrator};
-
-struct FixedClock;
-
-impl ClockMock for FixedClock {
-    fn now_utc(&self) -> DateTime<Utc> {
-        DateTime::UNIX_EPOCH
-    }
-}
-
-let migrator = DbMigrator::with_clock_mock(FixedClock, Vec::<String>::new());
-```
 
 ## What gets tracked
 
@@ -164,13 +138,13 @@ The migrator keeps one table, `DbMigrationsRun`, in the target database:
 | Column | Meaning |
 | --- | --- |
 | `id` | Surrogate key |
-| `executed_at` | When the script ran, in UTC |
+| `executed_at` | When the script ran, in UTC, from the system clock |
 | `filename` | The script's filename, its identity |
 | `version` | Version of this crate that ran it |
 
 ## Errors
 
-Every call that can fail returns `Error`:
+Every call that can fail returns `ErrorKind`:
 
 | Variant | Meaning |
 | --- | --- |

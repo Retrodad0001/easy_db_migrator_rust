@@ -11,20 +11,16 @@ compile_error!(
 );
 
 mod backend;
-mod cancellation;
-mod clock;
-mod config;
 mod database_kind;
-mod error;
+mod error_kind;
+mod migration_configuration;
 mod migrator;
+mod run_outcome_kind;
 mod script;
 
-pub use cancellation::CancellationToken;
-pub use clock::{ClockMock, SystemClock};
-pub use config::MigrationConfiguration;
 pub use database_kind::DatabaseKind;
-pub use error::Error;
-pub use migrator::DbMigrator;
-pub use script::Script;
+pub use error_kind::ErrorKind;
+pub use migration_configuration::MigrationConfiguration;
+pub use migrator::{try_apply_migrations, try_delete_database_if_exists};
 
 pub(crate) const CRATE_VERSION: &str = env!("CARGO_PKG_VERSION");

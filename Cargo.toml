@@ -1,7 +1,7 @@
 [package]
 name = "easy_db_migrator_rust"
-version = "1.0.1"
-edition = "2024"
+version = "1.0.2"
+edition.workspace = true
 description = "A lightweight, plain-SQL database migration library for PostgreSQL and SQL Server."
 license = "MIT"
 repository = "https://github.com/Retrodad0001/easy_db_migrator_rust"
@@ -10,48 +10,26 @@ keywords = ["migration", "database", "postgres", "sqlserver", "sql", "Rust", "ru
 categories = ["database"]
 publish = false
 
-# [profile.release] lives in the workspace root at ../Cargo.toml. Cargo ignores
-# profiles declared by a non-root member and warns when it finds one.
-
-[lints.rust]
-missing_docs = "deny"
-unused_must_use = "deny"
-
-[lints.clippy]
-unwrap_used = "deny"
-expect_used = "deny"
-wildcard_enum_match_arm = "deny"
-wildcard_imports = "deny"
-match_wildcard_for_single_variants = "deny"
-panic = "deny"
-unreachable = "deny"
-unimplemented = "deny"
-indexing_slicing = "deny"
-
 [features]
 postgres = ["dep:sqlx"]
 mssql = ["dep:tiberius", "dep:tokio-util", "tokio/net"]
 
 [dependencies]
-chrono = "0.4.45"
-sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-native-roots", "postgres", "chrono"], optional = true }
-thiserror = "2.0.20"
-tiberius = { version = "0.12.3", default-features = false, features = ["tds73", "chrono", "native-tls"], optional = true }
-tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "time", "sync"] }
-tokio-util = { version = "0.7.19", features = ["compat"], optional = true }
-tracing = "0.1.44"
-
-[[test]]
-name = "postgres_integration_tests"
-path = "tests/postgres_integration_tests.rs"
-required-features = ["postgres"]
-
-[[test]]
-name = "mssql_integration_tests"
-path = "tests/mssql_integration_tests.rs"
-required-features = ["mssql"]
+chrono.workspace = true
+sqlx = { workspace = true, optional = true }
+thiserror.workspace = true
+tiberius = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["time", "sync"] }
+tokio-util = { workspace = true, optional = true }
+tracing.workspace = true
 
 [dev-dependencies]
-testcontainers = "0.28.0"
-tracing-test = { version = "0.2.6", features = ["no-env-filter"] }
+testcontainers.workspace = true
+tracing-test.workspace = true
 
+[[test]]
+name = "integration_tests"
+path = "tests/integration_tests.rs"
+
+[lints]
+workspace = true

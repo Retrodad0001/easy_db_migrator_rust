@@ -1,60 +1,71 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Connection, Executor, PgConnection};
 
 use crate::{
-    CRATE_VERSION, backend::RunMigrationResult, cancellation::CancellationToken,
-    config::MigrationConfiguration, error::Error, script::Script,
+    CRATE_VERSION, backend::run_migration_result_kind::RunMigrationResultKind,
+    error_kind::ErrorKind, migration_configuration::MigrationConfiguration, script::Script,
 };
 
 const TRACKING_TABLE: &str = "DbMigrationsRun";
 
-async fn connect_admin(config: &MigrationConfiguration) -> Result<PgConnection, Error> {
-    let url = with_database(config.connection_string(), "postgres");
+async fn try_connect_admin(
+    migration_configuration: &MigrationConfiguration,
+) -> Result<PgConnection, ErrorKind> {
+    let url = determine_the_connection_url(&migration_configuration.connection_string, "postgres");
     Ok(PgConnection::connect(&url).await?)
 }
 
-async fn connect_target(config: &MigrationConfiguration) -> Result<PgConnection, Error> {
-    let url = with_database(config.connection_string(), config.database_name());
+async fn try_connect_target(
+    migration_configuration: &MigrationConfiguration,
+) -> Result<PgConnection, ErrorKind> {
+    let url = determine_the_connection_url(
+        &migration_configuration.connection_string,
+        &migration_configuration.database_name,
+    );
     Ok(PgConnection::connect(&url).await?)
 }
 
-fn with_database(base_connection_string: &str, database_name: &str) -> String {
+#[inline]
+fn determine_the_connection_url(base_connection_string: &str, database_name: &str) -> String {
     format!(
         "{}/{database_name}",
         base_connection_string.trim_end_matches('/')
     )
 }
 
-fn quote_identifier(identifier: &str) -> String {
+#[inline]
+fn determine_the_quoted_identifier(identifier: &str) -> String {
     format!("\"{}\"", identifier.replace('"', "\"\""))
 }
 
 pub(crate) async fn try_delete_database_if_exists(
-    config: &MigrationConfiguration,
-) -> Result<(), Error> {
-    let mut connection = connect_admin(config).await?;
+    migration_configuration: &MigrationConfiguration,
+) -> Result<(), ErrorKind> {
+    let mut connection = try_connect_admin(migration_configuration).await?;
     let query = format!(
         "DROP DATABASE IF EXISTS {}",
-        quote_identifier(config.database_name())
+        determine_the_quoted_identifier(&migration_configuration.database_name)
     );
     connection.execute(AssertSqlSafe(query)).await?;
     Ok(())
 }
 
 pub(crate) async fn try_create_database_if_missing(
-    config: &MigrationConfiguration,
-) -> Result<(), Error> {
-    let mut connection = connect_admin(config).await?;
+    migration_configuration: &MigrationConfiguration,
+) -> Result<(), ErrorKind> {
+    let mut connection = try_connect_admin(migration_configuration).await?;
 
     let exists: Option<i32> = sqlx::query_scalar("SELECT 1 FROM pg_database WHERE datname = $1")
-        .bind(config.database_name())
+        .bind(migration_configuration.database_name.as_str())
         .fetch_optional(&mut connection)
         .await?;
 
     if exists.is_none() {
         let query = format!(
             "CREATE DATABASE {}",
-            quote_identifier(config.database_name())
+            determine_the_quoted_identifier(&migration_configuration.database_name)
         );
         connection.execute(AssertSqlSafe(query)).await?;
     }
@@ -63,9 +74,9 @@ pub(crate) async fn try_create_database_if_missing(
 }
 
 pub(crate) async fn try_ensure_tracking_table(
-    config: &MigrationConfiguration,
-) -> Result<(), Error> {
-    let mut connection = connect_target(config).await?;
+    migration_configuration: &MigrationConfiguration,
+) -> Result<(), ErrorKind> {
+    let mut connection = try_connect_target(migration_configuration).await?;
     connection
         .execute(AssertSqlSafe(format!(
             "CREATE TABLE IF NOT EXISTS {TRACKING_TABLE} (
@@ -79,43 +90,45 @@ pub(crate) async fn try_ensure_tracking_table(
     Ok(())
 }
 
-pub(crate) async fn run_script(
-    config: &MigrationConfiguration,
+pub(crate) async fn try_run_script(
+    migration_configuration: &MigrationConfiguration,
     script: &Script,
-    executed_at: DateTime<Utc>,
-    cancellation_token: &CancellationToken,
-) -> Result<RunMigrationResult, Error> {
-    if cancellation_token.is_cancelled() {
-        return Ok(RunMigrationResult::MigrationWasCancelled);
+    date_time: DateTime<Utc>,
+    is_cancelled: &AtomicBool,
+) -> Result<RunMigrationResultKind, ErrorKind> {
+    if is_cancelled.load(Ordering::SeqCst) {
+        return Ok(RunMigrationResultKind::MigrationWasCancelled);
     }
 
-    let mut connection = connect_target(config).await?;
+    let mut connection = try_connect_target(migration_configuration).await?;
 
     let already_run: Option<i32> = sqlx::query_scalar(AssertSqlSafe(format!(
         "SELECT id FROM {TRACKING_TABLE} WHERE filename = $1"
     )))
-    .bind(script.filename())
+    .bind(script.filename.as_str())
     .fetch_optional(&mut connection)
     .await?;
 
     if already_run.is_some() {
-        return Ok(RunMigrationResult::ScriptSkippedBecauseAlreadyRun);
+        return Ok(RunMigrationResultKind::ScriptSkippedBecauseAlreadyRun);
     }
 
     let mut transaction = connection.begin().await?;
 
-    transaction.execute(AssertSqlSafe(script.content())).await?;
+    transaction
+        .execute(AssertSqlSafe(script.content.as_str()))
+        .await?;
 
     sqlx::query(AssertSqlSafe(format!(
         "INSERT INTO {TRACKING_TABLE} (executed_at, filename, version) VALUES ($1, $2, $3)"
     )))
-    .bind(executed_at)
-    .bind(script.filename())
+    .bind(date_time)
+    .bind(script.filename.as_str())
     .bind(CRATE_VERSION)
     .execute(&mut *transaction)
     .await?;
 
     transaction.commit().await?;
 
-    Ok(RunMigrationResult::MigrationScriptExecuted)
+    Ok(RunMigrationResultKind::MigrationScriptExecuted)
 }

@@ -1,9 +1,4 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RunMigrationResult {
-    MigrationScriptExecuted,
-    ScriptSkippedBecauseAlreadyRun,
-    MigrationWasCancelled,
-}
+pub(crate) mod run_migration_result_kind;
 
 #[cfg(feature = "mssql")]
 pub(crate) mod mssql;

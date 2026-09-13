@@ -6,8 +6,8 @@
   // database_kind.rs.
   "rust-analyzer.cargo.features": ["postgres", "mssql"],
 
-  // Use clippy for on-save diagnostics so the editor shows the same lints CI
-  // enforces (see .github/workflows/ci.yml).
+  // Use clippy for on-save diagnostics so the editor shows the same lints
+  // validate.bat in the workspace root enforces.
   "rust-analyzer.check.command": "clippy",
   "rust-analyzer.check.allTargets": true
 }
