@@ -13,13 +13,12 @@ use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
 
 use super::{TrackingRow, expect_ok, expect_some, sweep_leftover_containers};
 
-const TEST_LABEL: &str = "easy_db_migrator_rust_mssql_test";
-
 pub(crate) async fn start_the_container() -> (ContainerAsync<GenericImage>, String) {
-    const SA_PASSWORD: &str = "yourStrong(!)Password";
+    const TEST_LABEL: &str = "easy_db_migrator_rust_mssql_test";
     static SWEPT: Once = Once::new();
     SWEPT.call_once(|| sweep_leftover_containers(TEST_LABEL));
 
+    const SA_PASSWORD: &str = "yourStrong(!)Password";
     let container = expect_ok(
         GenericImage::new("mcr.microsoft.com/mssql/server", "2022-CU26-ubuntu-22.04")
             .with_wait_for(WaitFor::message_on_stdout(
@@ -91,6 +90,26 @@ pub(crate) async fn is_database_existing(connection_string: &str, database_name:
         "failed to collect database-existence row",
     );
     row.is_some()
+}
+
+pub(crate) async fn is_query_running(connection_string: &str, text: &str) -> bool {
+    let mut client = connect(connection_string, None).await;
+    let mut query = Query::new(
+        "SELECT COUNT(*) FROM sys.dm_exec_requests AS r \
+         CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) AS t \
+         WHERE t.text LIKE @P1 AND r.session_id <> @@SPID",
+    );
+    query.bind(format!("%{text}%"));
+    let row = expect_ok(
+        expect_ok(
+            query.query(&mut client).await,
+            "failed to read the running requests",
+        )
+        .into_row()
+        .await,
+        "failed to collect the running-requests row",
+    );
+    row.and_then(|row| row.get::<i32, _>(0)).unwrap_or(0) > 0
 }
 
 pub(crate) async fn is_database_online(connection_string: &str, database_name: &str) -> bool {

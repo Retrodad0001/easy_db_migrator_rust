@@ -54,21 +54,21 @@ impl Script {
 
         let year: i32 = filename[0..4]
             .parse()
-            .map_err(|_| ErrorKind::InvalidScriptName {
+            .map_err(|error| ErrorKind::InvalidScriptName {
                 filename: filename.clone(),
-                reason: "expected a 4-digit year at position 0".to_string(),
+                reason: format!("expected a 4-digit year at position 0: {error}"),
             })?;
         let month: u32 = filename[4..6]
             .parse()
-            .map_err(|_| ErrorKind::InvalidScriptName {
+            .map_err(|error| ErrorKind::InvalidScriptName {
                 filename: filename.clone(),
-                reason: "expected a 2-digit month at position 4".to_string(),
+                reason: format!("expected a 2-digit month at position 4: {error}"),
             })?;
         let day: u32 = filename[6..8]
             .parse()
-            .map_err(|_| ErrorKind::InvalidScriptName {
+            .map_err(|error| ErrorKind::InvalidScriptName {
                 filename: filename.clone(),
-                reason: "expected a 2-digit day at position 6".to_string(),
+                reason: format!("expected a 2-digit day at position 6: {error}"),
             })?;
         let date_part = NaiveDate::from_ymd_opt(year, month, day).ok_or_else(|| {
             ErrorKind::InvalidScriptName {
@@ -80,9 +80,9 @@ impl Script {
         let sequence_part: u32 =
             filename[9..12]
                 .parse()
-                .map_err(|_| ErrorKind::InvalidScriptName {
+                .map_err(|error| ErrorKind::InvalidScriptName {
                     filename: filename.clone(),
-                    reason: "expected a 3-digit sequence number at position 9".to_string(),
+                    reason: format!("expected a 3-digit sequence number at position 9: {error}"),
                 })?;
 
         Ok(Self {

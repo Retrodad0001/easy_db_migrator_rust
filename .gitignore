@@ -23,7 +23,6 @@ target
 # AI assistant context and settings
 AGENTS.md
 ARCHITECTURE.md
-CLAUDE.md
 CLAUDE.local.md
 .claude/
 

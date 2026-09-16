@@ -71,7 +71,7 @@ pub(crate) fn determine_a_unique_database_name(prefix: &str) -> String {
 
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_or(0, |since_epoch| since_epoch.subsec_nanos());
+        .map_or(0, |duration| duration.subsec_nanos());
     let sequence = NEXT.fetch_add(1, Ordering::Relaxed);
 
     format!("{prefix}{}{nanos}{sequence}", std::process::id())
@@ -91,6 +91,10 @@ pub(crate) fn sweep_leftover_containers(test_label: &str) {
 
     for id in ids.split_whitespace() {
         eprintln!("removing container {id} left behind by an earlier run");
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a leftover container that cannot be removed does not change a test result"
+        )]
         let _ = std::process::Command::new("docker")
             .args(["rm", "-f", id])
             .output();

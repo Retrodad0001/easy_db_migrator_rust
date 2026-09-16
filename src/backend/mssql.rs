@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use tiberius::{Client, Config, Query};
 use tokio::net::TcpStream;
 use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
+use tracing::error;
 
 use crate::{
     CRATE_VERSION, backend::run_migration_result_kind::RunMigrationResultKind,
@@ -12,63 +13,83 @@ use crate::{
 
 const TRACKING_TABLE: &str = "DbMigrationsRun";
 
-async fn try_connect(
+async fn try_connect_admin(
     migration_configuration: &MigrationConfiguration,
-    database_name: Option<&str>,
 ) -> Result<Client<Compat<TcpStream>>, ErrorKind> {
-    let mut tds_config = Config::from_ado_string(&migration_configuration.connection_string)
-        .map_err(ErrorKind::Mssql)?;
-    if let Some(database_name) = database_name {
-        tds_config.database(database_name);
-    }
+    let config = Config::from_ado_string(&migration_configuration.connection_string)?;
+    try_connect(config).await
+}
 
-    let tcp = TcpStream::connect(tds_config.get_addr()).await?;
-    tcp.set_nodelay(true)?;
+async fn try_connect_target(
+    migration_configuration: &MigrationConfiguration,
+) -> Result<Client<Compat<TcpStream>>, ErrorKind> {
+    let mut config = Config::from_ado_string(&migration_configuration.connection_string)?;
+    config.database(&migration_configuration.database_name);
+    try_connect(config).await
+}
 
-    let client = Client::connect(tds_config, tcp.compat_write()).await?;
-    Ok(client)
+async fn try_connect(config: Config) -> Result<Client<Compat<TcpStream>>, ErrorKind> {
+    let tcp_stream = TcpStream::connect(config.get_addr()).await?;
+    tcp_stream.set_nodelay(true)?;
+    Ok(Client::connect(config, tcp_stream.compat_write()).await?)
+}
+
+#[inline]
+fn determine_the_quoted_database_name(migration_configuration: &MigrationConfiguration) -> String {
+    format!(
+        "[{}]",
+        migration_configuration.database_name.replace(']', "]]")
+    )
+}
+
+#[inline]
+fn determine_the_drop_database_query(migration_configuration: &MigrationConfiguration) -> String {
+    let quoted_database_name = determine_the_quoted_database_name(migration_configuration);
+    format!(
+        "IF EXISTS (SELECT * FROM sys.databases WHERE name = @P1)
+         BEGIN
+            ALTER DATABASE {quoted_database_name} SET OFFLINE WITH ROLLBACK IMMEDIATE;
+            ALTER DATABASE {quoted_database_name} SET ONLINE;
+            DROP DATABASE {quoted_database_name};
+         END"
+    )
+}
+
+#[inline]
+fn determine_the_create_database_query(migration_configuration: &MigrationConfiguration) -> String {
+    format!(
+        "IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = @P1)
+         BEGIN
+            CREATE DATABASE {}
+         END",
+        determine_the_quoted_database_name(migration_configuration)
+    )
 }
 
 pub(crate) async fn try_delete_database_if_exists(
     migration_configuration: &MigrationConfiguration,
 ) -> Result<(), ErrorKind> {
-    let mut client = try_connect(migration_configuration, None).await?;
-    let database_name = &migration_configuration.database_name;
-    let query = format!(
-        "IF EXISTS (SELECT * FROM sys.databases WHERE name = '{database_name}')
-         BEGIN
-            ALTER DATABASE [{database_name}] SET OFFLINE WITH ROLLBACK IMMEDIATE;
-            ALTER DATABASE [{database_name}] SET ONLINE;
-            DROP DATABASE [{database_name}];
-         END"
-    );
-    Query::new(query).execute(&mut client).await?;
+    let mut client = try_connect_admin(migration_configuration).await?;
+    let mut query = Query::new(determine_the_drop_database_query(migration_configuration));
+    query.bind(migration_configuration.database_name.as_str());
+    query.execute(&mut client).await?;
     Ok(())
 }
 
 pub(crate) async fn try_create_database_if_missing(
     migration_configuration: &MigrationConfiguration,
 ) -> Result<(), ErrorKind> {
-    let mut client = try_connect(migration_configuration, None).await?;
-    let database_name = &migration_configuration.database_name;
-    let query = format!(
-        "IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = '{database_name}')
-         BEGIN
-            CREATE DATABASE [{database_name}]
-         END"
-    );
-    Query::new(query).execute(&mut client).await?;
+    let mut client = try_connect_admin(migration_configuration).await?;
+    let mut query = Query::new(determine_the_create_database_query(migration_configuration));
+    query.bind(migration_configuration.database_name.as_str());
+    query.execute(&mut client).await?;
     Ok(())
 }
 
 pub(crate) async fn try_ensure_tracking_table(
     migration_configuration: &MigrationConfiguration,
 ) -> Result<(), ErrorKind> {
-    let mut client = try_connect(
-        migration_configuration,
-        Some(migration_configuration.database_name.as_str()),
-    )
-    .await?;
+    let mut client = try_connect_target(migration_configuration).await?;
     let query = format!(
         "IF NOT EXISTS (SELECT * FROM sysobjects WHERE name = '{TRACKING_TABLE}' AND xtype = 'U')
          BEGIN
@@ -94,11 +115,7 @@ pub(crate) async fn try_run_script(
         return Ok(RunMigrationResultKind::MigrationWasCancelled);
     }
 
-    let mut client = try_connect(
-        migration_configuration,
-        Some(migration_configuration.database_name.as_str()),
-    )
-    .await?;
+    let mut client = try_connect_target(migration_configuration).await?;
 
     let mut already_run_query = Query::new(format!(
         "SELECT Id FROM {TRACKING_TABLE} WHERE Filename = @P1"
@@ -117,10 +134,16 @@ pub(crate) async fn try_run_script(
 
     let run_result = try_run_script_in_transaction(&mut client, script, date_time).await;
 
-    if run_result.is_err() {
-        let _ = client
+    if run_result.is_err()
+        && let Err(error) = client
             .simple_query("IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION")
-            .await;
+            .await
+    {
+        error!(
+            %error,
+            filename = script.filename.as_str(),
+            "rollback after the failed script executed with errors"
+        );
     }
 
     run_result?;

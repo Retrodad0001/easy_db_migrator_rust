@@ -1,6 +1,8 @@
+use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::{DateTime, Utc};
+use sqlx::postgres::PgConnectOptions;
 use sqlx::{AssertSqlSafe, Connection, Executor, PgConnection};
 
 use crate::{
@@ -13,42 +15,54 @@ const TRACKING_TABLE: &str = "DbMigrationsRun";
 async fn try_connect_admin(
     migration_configuration: &MigrationConfiguration,
 ) -> Result<PgConnection, ErrorKind> {
-    let url = determine_the_connection_url(&migration_configuration.connection_string, "postgres");
-    Ok(PgConnection::connect(&url).await?)
+    let pg_connect_options =
+        PgConnectOptions::from_str(&migration_configuration.connection_string)?
+            .database("postgres");
+    Ok(PgConnection::connect_with(&pg_connect_options).await?)
 }
 
 async fn try_connect_target(
     migration_configuration: &MigrationConfiguration,
 ) -> Result<PgConnection, ErrorKind> {
-    let url = determine_the_connection_url(
-        &migration_configuration.connection_string,
-        &migration_configuration.database_name,
-    );
-    Ok(PgConnection::connect(&url).await?)
+    let pg_connect_options =
+        PgConnectOptions::from_str(&migration_configuration.connection_string)?
+            .database(&migration_configuration.database_name);
+    Ok(PgConnection::connect_with(&pg_connect_options).await?)
 }
 
 #[inline]
-fn determine_the_connection_url(base_connection_string: &str, database_name: &str) -> String {
+fn determine_the_quoted_database_name(migration_configuration: &MigrationConfiguration) -> String {
     format!(
-        "{}/{database_name}",
-        base_connection_string.trim_end_matches('/')
+        "\"{}\"",
+        migration_configuration.database_name.replace('"', "\"\"")
     )
 }
 
 #[inline]
-fn determine_the_quoted_identifier(identifier: &str) -> String {
-    format!("\"{}\"", identifier.replace('"', "\"\""))
+fn determine_the_drop_database_query(migration_configuration: &MigrationConfiguration) -> String {
+    format!(
+        "DROP DATABASE IF EXISTS {}",
+        determine_the_quoted_database_name(migration_configuration)
+    )
+}
+
+#[inline]
+fn determine_the_create_database_query(migration_configuration: &MigrationConfiguration) -> String {
+    format!(
+        "CREATE DATABASE {}",
+        determine_the_quoted_database_name(migration_configuration)
+    )
 }
 
 pub(crate) async fn try_delete_database_if_exists(
     migration_configuration: &MigrationConfiguration,
 ) -> Result<(), ErrorKind> {
     let mut connection = try_connect_admin(migration_configuration).await?;
-    let query = format!(
-        "DROP DATABASE IF EXISTS {}",
-        determine_the_quoted_identifier(&migration_configuration.database_name)
-    );
-    connection.execute(AssertSqlSafe(query)).await?;
+    connection
+        .execute(AssertSqlSafe(determine_the_drop_database_query(
+            migration_configuration,
+        )))
+        .await?;
     Ok(())
 }
 
@@ -63,11 +77,11 @@ pub(crate) async fn try_create_database_if_missing(
         .await?;
 
     if exists.is_none() {
-        let query = format!(
-            "CREATE DATABASE {}",
-            determine_the_quoted_identifier(&migration_configuration.database_name)
-        );
-        connection.execute(AssertSqlSafe(query)).await?;
+        connection
+            .execute(AssertSqlSafe(determine_the_create_database_query(
+                migration_configuration,
+            )))
+            .await?;
     }
 
     Ok(())

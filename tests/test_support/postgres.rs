@@ -1,6 +1,8 @@
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Once;
 
+use sqlx::postgres::PgConnectOptions;
 use sqlx::{AssertSqlSafe, Connection, Executor, PgConnection, Row};
 use testcontainers::ContainerAsync;
 use testcontainers::GenericImage;
@@ -10,9 +12,8 @@ use testcontainers::runners::AsyncRunner;
 
 use super::{TrackingRow, expect_ok, sweep_leftover_containers};
 
-const TEST_LABEL: &str = "easy_db_migrator_rust_postgres_test";
-
 pub(crate) async fn start_the_container() -> (ContainerAsync<GenericImage>, String) {
+    const TEST_LABEL: &str = "easy_db_migrator_rust_postgres_test";
     static SWEPT: Once = Once::new();
     SWEPT.call_once(|| sweep_leftover_containers(TEST_LABEL));
 
@@ -48,17 +49,14 @@ pub(crate) fn determine_the_fixtures_path(fixture_directory: &str) -> PathBuf {
         .join(fixture_directory)
 }
 
-#[inline]
-fn determine_the_url(connection_string: &str, database_name: &str) -> String {
-    format!(
-        "{}/{database_name}",
-        connection_string.trim_end_matches('/')
-    )
-}
-
 async fn connect(connection_string: &str, database_name: &str) -> PgConnection {
+    let pg_connect_options = expect_ok(
+        PgConnectOptions::from_str(connection_string),
+        "invalid postgres connection string",
+    )
+    .database(database_name);
     expect_ok(
-        PgConnection::connect(&determine_the_url(connection_string, database_name)).await,
+        PgConnection::connect_with(&pg_connect_options).await,
         "failed to connect to postgres",
     )
 }
@@ -73,6 +71,20 @@ pub(crate) async fn is_database_existing(connection_string: &str, database_name:
         "failed to check database existence",
     );
     exists.is_some()
+}
+
+pub(crate) async fn is_query_running(connection_string: &str, text: &str) -> bool {
+    let mut connection = connect(connection_string, "postgres").await;
+    let count: i64 = expect_ok(
+        sqlx::query_scalar(
+            "SELECT count(*) FROM pg_stat_activity WHERE query LIKE $1 AND pid <> pg_backend_pid()",
+        )
+        .bind(format!("%{text}%"))
+        .fetch_one(&mut connection)
+        .await,
+        "failed to read pg_stat_activity",
+    );
+    count > 0
 }
 
 pub(crate) async fn is_database_accepting_connections(

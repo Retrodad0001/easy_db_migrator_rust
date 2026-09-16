@@ -68,10 +68,6 @@ pub async fn try_apply_migrations(
         database = migration_configuration.database_name.as_str(),
         "start running migrations for database"
     );
-    info!(
-        connection_string = migration_configuration.connection_string.as_str(),
-        "connection-string used"
-    );
 
     const MIGRATION_FAILED: &str = "migration process executed with errors";
 
@@ -226,29 +222,29 @@ async fn run_migration_scripts(
 }
 
 fn try_list_the_script_filenames(path: &Path) -> Result<Vec<String>, ErrorKind> {
-    let entries = std::fs::read_dir(path).map_err(|source| ErrorKind::ScriptsDirectory {
+    let entries = std::fs::read_dir(path).map_err(|error| ErrorKind::ScriptsDirectory {
         path: path.to_path_buf(),
-        source,
+        source: error,
     })?;
 
     let mut filenames = Vec::new();
     for entry in entries {
         let entry_path = entry
-            .map_err(|source| ErrorKind::ScriptsDirectory {
+            .map_err(|error| ErrorKind::ScriptsDirectory {
                 path: path.to_path_buf(),
-                source,
+                source: error,
             })?
             .path();
         if !entry_path.is_file() {
             continue;
         }
-        filenames.push(
-            entry_path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or_default()
-                .to_string(),
-        );
+        let Some(filename) = entry_path.file_name().and_then(std::ffi::OsStr::to_str) else {
+            return Err(ErrorKind::InvalidScriptName {
+                filename: entry_path.to_string_lossy().into_owned(),
+                reason: "the filename is not UTF-8".to_string(),
+            });
+        };
+        filenames.push(filename.to_string());
     }
     Ok(filenames)
 }
@@ -271,12 +267,11 @@ fn try_read_the_scripts(
     let mut script_files = Vec::new();
     for filename in filenames {
         let script_path = path.join(filename);
-        let content = std::fs::read_to_string(&script_path).map_err(|source| {
-            ErrorKind::ScriptsDirectory {
+        let content =
+            std::fs::read_to_string(&script_path).map_err(|error| ErrorKind::ScriptsDirectory {
                 path: script_path.clone(),
-                source,
-            }
-        })?;
+                source: error,
+            })?;
         script_files.push((filename.clone(), content));
     }
     Ok(script_files)
@@ -290,10 +285,6 @@ fn try_determine_the_ordered_scripts(
         .into_iter()
         .map(|(filename, content)| Script::new(filename, content))
         .collect::<Result<Vec<Script>, ErrorKind>>()?;
-    scripts.sort_by(|a, b| {
-        a.date_part
-            .cmp(&b.date_part)
-            .then(a.sequence_part.cmp(&b.sequence_part))
-    });
+    scripts.sort_by_key(|script| (script.date_part, script.sequence_part));
     Ok(scripts)
 }

@@ -1,0 +1,2 @@
+CREATE TABLE slow_table (Id int PRIMARY KEY);
+WAITFOR DELAY '00:00:03';

@@ -126,10 +126,11 @@ async fn test_given_postgres_scripts_already_applied_when_migrations_run_again_t
     // What it asserts.
     // A new PostgreSQL container gets a database with a unique name, the postgres
     // fixture scripts, and 20211230_001_DoStuffScript.sql excluded. The database
-    // does not exist before the delete, and it still does not exist after the
-    // delete. The migrations run once, and the tracking table then holds
-    // 20211230_002_Script2p.sql and 20211231_001_Script1p.sql, in that order.
-    // The migrations then run a second time. The second run
+    // does not exist before the delete. The delete succeeds, and the database
+    // still does not exist after it. The migrations run once and succeed, and
+    // the tracking table then holds 20211230_002_Script2p.sql and
+    // 20211231_001_Script1p.sql, in that order. The migrations then run a second
+    // time. The second run succeeds, and it
     // logs "setup database executed successfully", "setup versioning table executed
     // successfully", "script was not run because script was already executed" and
     // "migration process executed successfully" at INFO. The tracking table holds
@@ -246,9 +247,9 @@ async fn test_given_postgres_scripts_already_applied_when_migrations_run_again_t
 async fn test_given_cancelled_flag_when_postgres_migrations_run_then_the_run_stops() {
     // What it asserts.
     // A new PostgreSQL container gets a database with a unique name and the
-    // postgres fixture scripts. The database does not exist before the delete,
-    // and it still does not exist after the delete. The cancel flag is set to
-    // true, and the migrations run. The run still returns success, logs "migration
+    // postgres fixture scripts. The database does not exist before the delete.
+    // The delete succeeds, and the database still does not exist after it. The
+    // cancel flag is set to true, and the migrations run. The run still returns success, logs "migration
     // process was canceled from the outside" at WARN, and creates no database.
     const TOTAL: u8 = 4;
 
@@ -264,7 +265,6 @@ async fn test_given_cancelled_flag_when_postgres_migrations_run_then_the_run_sto
         ),
         "invalid migration configuration",
     );
-    let is_cancelled = AtomicBool::new(false);
     eprintln!("[1/{TOTAL}] END starting the postgres container - passed");
 
     eprintln!("[2/{TOTAL}] BEGIN deleting the database and setting the cancel flag");
@@ -280,6 +280,7 @@ async fn test_given_cancelled_flag_when_postgres_migrations_run_then_the_run_sto
         !postgres::is_database_existing(&connection_string, &database_name).await,
         "expected the database to not exist after the delete, before the run"
     );
+    let is_cancelled = AtomicBool::new(false);
     is_cancelled.store(true, Ordering::SeqCst);
     eprintln!("[2/{TOTAL}] END deleting the database and setting the cancel flag - passed");
 
@@ -312,8 +313,9 @@ async fn test_given_failing_postgres_script_when_migrations_run_then_failure_is_
     // What it asserts.
     // A new PostgreSQL container gets a database with a unique name and the postgres
     // failure fixture scripts: a good script, a broken script and a later script.
-    // The database does not exist before the delete, and it still does not exist
-    // after the delete. The migrations run. The run fails with "migration
+    // The database does not exist before the delete. The delete succeeds, and the
+    // database still does not exist after it. The migrations run. The run fails
+    // with "migration
     // process executed with errors", logged at ERROR, and logs "script was not
     // completed due to exception" at ERROR and "script was skipped due to exception
     // in previous script" at WARN. The tracking table holds exactly one row,
@@ -400,7 +402,8 @@ async fn test_given_postgres_scripts_that_cannot_be_loaded_when_migrations_run_t
     // What it asserts.
     // A new PostgreSQL container gets a database with a unique name and a scripts
     // directory that does not exist. The database does not exist before the
-    // delete, and it still does not exist after the delete. The migrations run.
+    // delete. The delete succeeds, and the database still does not exist after
+    // it. The migrations run.
     // The run fails with "One or more scripts could not be loaded, is the
     // sequence patterns correct?", logged at ERROR, logs "migration process
     // executed with errors" at ERROR, and logs no "script was run". The database
@@ -638,7 +641,8 @@ async fn test_given_postgres_database_with_data_when_migrations_run_then_its_dat
     // The migrations run and succeed, log "setup database executed successfully" and
     // "migration process executed successfully" at INFO, and log no "setup
     // database executed with errors". The marker_table still exists, and the
-    // tracking table holds three rows, one per fixture script.
+    // tracking table holds three rows: 20211230_001_DoStuffScript.sql,
+    // 20211230_002_Script2p.sql and 20211231_001_Script1p.sql, in that order.
     const TOTAL: u8 = 4;
 
     eprintln!("[1/{TOTAL}] BEGIN starting the postgres container");
@@ -701,12 +705,395 @@ async fn test_given_postgres_database_with_data_when_migrations_run_then_its_dat
         "expected the pre-existing table to survive — the database must not be recreated"
     );
     let rows = postgres::read_the_tracking_rows(&connection_string, &database_name).await;
+    let filenames: Vec<&str> = rows
+        .iter()
+        .map(|tracking_row| tracking_row.filename.as_str())
+        .collect();
     assert_eq!(
-        rows.len(),
-        3,
-        "expected all three fixture scripts to be tracked, got {rows:#?}"
+        filenames,
+        [
+            "20211230_001_DoStuffScript.sql",
+            "20211230_002_Script2p.sql",
+            "20211231_001_Script1p.sql",
+        ],
+        "expected all three fixture scripts to be tracked in order, got {rows:#?}"
     );
     eprintln!("[4/{TOTAL}] END checking the marker table and the tracking table - passed");
+}
+
+#[cfg(feature = "postgres")]
+#[tokio::test]
+#[traced_test]
+async fn test_given_postgres_connection_string_with_a_database_and_a_query_when_migrations_run_then_every_script_is_applied()
+ {
+    // What it asserts.
+    // A new PostgreSQL container gets a connection string that ends in
+    // /postgres?sslmode=disable, a database with a unique name, and the
+    // postgres fixture scripts with 20211230_001_DoStuffScript.sql excluded.
+    // The database does not exist before the delete. The delete succeeds,
+    // and the database still does not exist after it. The migrations run
+    // and succeed, and log "migration process executed successfully" at
+    // INFO. The tracking table holds 20211230_002_Script2p.sql and
+    // 20211231_001_Script1p.sql, in that order.
+    const TOTAL: u8 = 4;
+
+    eprintln!("[1/{TOTAL}] BEGIN starting the postgres container");
+    let (_container, connection_string) = postgres::start_the_container().await;
+    eprintln!("[1/{TOTAL}] END starting the postgres container - passed");
+
+    eprintln!("[2/{TOTAL}] BEGIN deleting the database");
+    let database_name = determine_a_unique_database_name("testpostgres");
+    assert!(
+        !postgres::is_database_existing(&connection_string, &database_name).await,
+        "expected the database to not exist before the delete"
+    );
+    let migration_configuration = expect_ok(
+        MigrationConfiguration::new(
+            format!("{connection_string}/postgres?sslmode=disable"),
+            database_name.as_str(),
+            postgres::determine_the_fixtures_path("test_scripts"),
+            ["20211230_001_DoStuffScript.sql".to_string()],
+        ),
+        "invalid migration configuration",
+    );
+    expect_ok(
+        try_delete_database_if_exists(DatabaseKind::Postgresql, &migration_configuration).await,
+        "expected the delete to succeed with a database and a query in the connection string",
+    );
+    assert!(
+        !postgres::is_database_existing(&connection_string, &database_name).await,
+        "expected the database to not exist after the delete, before the run"
+    );
+    eprintln!("[2/{TOTAL}] END deleting the database - passed");
+
+    eprintln!("[3/{TOTAL}] BEGIN running the migrations");
+    expect_ok(
+        try_apply_migrations(
+            DatabaseKind::Postgresql,
+            &migration_configuration,
+            &AtomicBool::new(false),
+        )
+        .await,
+        "expected the migration run to succeed with a database and a query in the connection string",
+    );
+    assert_logged!("INFO", "migration process executed successfully");
+    eprintln!("[3/{TOTAL}] END running the migrations - passed");
+
+    eprintln!("[4/{TOTAL}] BEGIN reading the tracking table");
+    let rows = postgres::read_the_tracking_rows(&connection_string, &database_name).await;
+    let filenames: Vec<&str> = rows
+        .iter()
+        .map(|tracking_row| tracking_row.filename.as_str())
+        .collect();
+    assert_eq!(
+        filenames,
+        ["20211230_002_Script2p.sql", "20211231_001_Script1p.sql"],
+        "expected both scripts to be tracked in order, got {rows:#?}"
+    );
+    eprintln!("[4/{TOTAL}] END reading the tracking table - passed");
+}
+
+#[cfg(feature = "postgres")]
+#[tokio::test]
+#[traced_test]
+async fn test_given_postgres_server_that_does_not_answer_when_delete_runs_then_failure_is_reported()
+{
+    // What it asserts.
+    // No server answers on 127.0.0.1 port 1 before the delete. The
+    // connection string points at that port. The delete fails with
+    // "DeleteDatabaseIfExistAsync executed with error", logged at ERROR, and
+    // logs no "DeleteDatabaseIfExistAsync has executed".
+    const TOTAL: u8 = 2;
+
+    eprintln!("[1/{TOTAL}] BEGIN checking that no server answers on 127.0.0.1:1");
+    assert!(
+        std::net::TcpStream::connect("127.0.0.1:1").is_err(),
+        "expected no server to answer on 127.0.0.1:1"
+    );
+    eprintln!("[1/{TOTAL}] END checking that no server answers on 127.0.0.1:1 - passed");
+
+    eprintln!("[2/{TOTAL}] BEGIN deleting the database");
+    let migration_configuration = expect_ok(
+        MigrationConfiguration::new(
+            "postgres://postgres:postgres@127.0.0.1:1",
+            "testpostgres",
+            postgres::determine_the_fixtures_path("test_scripts"),
+            Vec::<String>::new(),
+        ),
+        "invalid migration configuration",
+    );
+    let message = expect_migration_error(
+        try_delete_database_if_exists(DatabaseKind::Postgresql, &migration_configuration).await,
+        "expected the delete to fail when no server answers",
+    );
+    assert_eq!(message, "DeleteDatabaseIfExistAsync executed with error");
+    assert_logged!("ERROR", &message);
+    assert!(
+        !logs_contain("DeleteDatabaseIfExistAsync has executed"),
+        "expected no success line when the delete failed"
+    );
+    eprintln!("[2/{TOTAL}] END deleting the database - passed");
+}
+
+#[cfg(feature = "postgres")]
+#[tokio::test]
+#[traced_test]
+async fn test_given_postgres_server_that_does_not_answer_when_migrations_run_then_setup_failure_is_reported()
+ {
+    // What it asserts.
+    // No server answers on 127.0.0.1 port 1 before the run. The connection
+    // string points at that port. The migrations run. The run fails with
+    // "setup database executed with errors", logged at ERROR, logs
+    // "migration process executed with errors" at ERROR, and logs neither
+    // "setup database executed successfully" nor "script was run".
+    const TOTAL: u8 = 2;
+
+    eprintln!("[1/{TOTAL}] BEGIN checking that no server answers on 127.0.0.1:1");
+    assert!(
+        std::net::TcpStream::connect("127.0.0.1:1").is_err(),
+        "expected no server to answer on 127.0.0.1:1"
+    );
+    eprintln!("[1/{TOTAL}] END checking that no server answers on 127.0.0.1:1 - passed");
+
+    eprintln!("[2/{TOTAL}] BEGIN running the migrations");
+    let migration_configuration = expect_ok(
+        MigrationConfiguration::new(
+            "postgres://postgres:postgres@127.0.0.1:1",
+            "testpostgres",
+            postgres::determine_the_fixtures_path("test_scripts"),
+            Vec::<String>::new(),
+        ),
+        "invalid migration configuration",
+    );
+    let message = expect_migration_error(
+        try_apply_migrations(
+            DatabaseKind::Postgresql,
+            &migration_configuration,
+            &AtomicBool::new(false),
+        )
+        .await,
+        "expected the run to fail when no server answers",
+    );
+    assert_eq!(message, "setup database executed with errors");
+    assert_logged!("ERROR", &message);
+    assert_logged!("ERROR", "migration process executed with errors");
+    assert!(
+        !logs_contain("setup database executed successfully"),
+        "expected no success line for the database set-up"
+    );
+    assert!(!logs_contain("script was run"), "expected no script to run");
+    eprintln!("[2/{TOTAL}] END running the migrations - passed");
+}
+
+#[cfg(feature = "postgres")]
+#[tokio::test]
+#[traced_test]
+async fn test_given_postgres_scripts_directory_with_a_folder_when_migrations_run_then_the_folder_is_skipped()
+ {
+    // What it asserts.
+    // A new PostgreSQL container gets a database with a unique name and a
+    // scripts directory that holds one script and the folder notes. The
+    // database does not exist before the run. The migrations run and
+    // succeed, and log "migration process executed successfully" at INFO.
+    // The tracking table holds exactly 20220401_001_FolderScriptp.sql, and
+    // folder_table exists.
+    const TOTAL: u8 = 3;
+
+    eprintln!("[1/{TOTAL}] BEGIN starting the postgres container");
+    let (_container, connection_string) = postgres::start_the_container().await;
+    eprintln!("[1/{TOTAL}] END starting the postgres container - passed");
+
+    eprintln!("[2/{TOTAL}] BEGIN running the migrations");
+    let database_name = determine_a_unique_database_name("testpostgres");
+    assert!(
+        !postgres::is_database_existing(&connection_string, &database_name).await,
+        "expected the database to not exist before the run"
+    );
+    let migration_configuration = expect_ok(
+        MigrationConfiguration::new(
+            connection_string.as_str(),
+            database_name.as_str(),
+            postgres::determine_the_fixtures_path("test_scripts_with_folder"),
+            Vec::<String>::new(),
+        ),
+        "invalid migration configuration",
+    );
+    expect_ok(
+        try_apply_migrations(
+            DatabaseKind::Postgresql,
+            &migration_configuration,
+            &AtomicBool::new(false),
+        )
+        .await,
+        "expected the run to succeed and skip the folder",
+    );
+    assert_logged!("INFO", "migration process executed successfully");
+    eprintln!("[2/{TOTAL}] END running the migrations - passed");
+
+    eprintln!("[3/{TOTAL}] BEGIN reading the tracking table and the tables");
+    let rows = postgres::read_the_tracking_rows(&connection_string, &database_name).await;
+    let filenames: Vec<&str> = rows
+        .iter()
+        .map(|tracking_row| tracking_row.filename.as_str())
+        .collect();
+    assert_eq!(
+        filenames,
+        ["20220401_001_FolderScriptp.sql"],
+        "expected only the script to be tracked, not the folder, got {rows:#?}"
+    );
+    assert!(
+        postgres::is_table_existing(&connection_string, &database_name, "folder_table").await,
+        "expected folder_table to have been created by the script"
+    );
+    eprintln!("[3/{TOTAL}] END reading the tracking table and the tables - passed");
+}
+
+#[cfg(feature = "postgres")]
+#[tokio::test]
+#[traced_test]
+async fn test_given_slow_first_postgres_script_when_the_run_is_cancelled_during_it_then_later_scripts_do_not_run()
+ {
+    // What it asserts.
+    // A new PostgreSQL container gets a database with a unique name and the
+    // cancel fixtures: a slow first script and a later script. The database
+    // does not exist before the run. The migrations run, and the cancel flag
+    // is set while PostgreSQL runs the pg_sleep of the first script. The run
+    // returns success, logs "migration process was canceled" at WARN, and
+    // logs no "canceled from the outside". The tracking table holds exactly
+    // 20220201_001_SlowScriptp.sql. slow_table exists, and later_table does
+    // not.
+    const TOTAL: u8 = 4;
+
+    eprintln!("[1/{TOTAL}] BEGIN starting the postgres container");
+    let (_container, connection_string) = postgres::start_the_container().await;
+    eprintln!("[1/{TOTAL}] END starting the postgres container - passed");
+
+    eprintln!("[2/{TOTAL}] BEGIN running the migrations and cancelling during the first script");
+    let database_name = determine_a_unique_database_name("testpostgres");
+    assert!(
+        !postgres::is_database_existing(&connection_string, &database_name).await,
+        "expected the database to not exist before the run"
+    );
+    let migration_configuration = expect_ok(
+        MigrationConfiguration::new(
+            connection_string.as_str(),
+            database_name.as_str(),
+            postgres::determine_the_fixtures_path("test_scripts_cancel"),
+            Vec::<String>::new(),
+        ),
+        "invalid migration configuration",
+    );
+    let is_cancelled = AtomicBool::new(false);
+    let run = try_apply_migrations(
+        DatabaseKind::Postgresql,
+        &migration_configuration,
+        &is_cancelled,
+    );
+    let cancel = async {
+        let mut tries = 0_u32;
+        while !postgres::is_query_running(&connection_string, "pg_sleep").await {
+            tries += 1;
+            assert!(tries < 200, "expected the slow script to start within 10 s");
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        is_cancelled.store(true, Ordering::SeqCst);
+    };
+    let (result, ()) = tokio::join!(run, cancel);
+    expect_ok(
+        result,
+        "expected a run cancelled between scripts to report success",
+    );
+    assert_logged!("WARN", "migration process was canceled");
+    assert!(
+        !logs_contain("canceled from the outside"),
+        "expected the cancel between scripts, not before the start"
+    );
+    eprintln!(
+        "[2/{TOTAL}] END running the migrations and cancelling during the first script - passed"
+    );
+
+    eprintln!("[3/{TOTAL}] BEGIN reading the tracking table");
+    let rows = postgres::read_the_tracking_rows(&connection_string, &database_name).await;
+    let filenames: Vec<&str> = rows
+        .iter()
+        .map(|tracking_row| tracking_row.filename.as_str())
+        .collect();
+    assert_eq!(
+        filenames,
+        ["20220201_001_SlowScriptp.sql"],
+        "expected only the slow script to be tracked, got {rows:#?}"
+    );
+    eprintln!("[3/{TOTAL}] END reading the tracking table - passed");
+
+    eprintln!("[4/{TOTAL}] BEGIN checking the tables");
+    assert!(
+        postgres::is_table_existing(&connection_string, &database_name, "slow_table").await,
+        "expected slow_table to have been created by the slow script"
+    );
+    assert!(
+        !postgres::is_table_existing(&connection_string, &database_name, "later_table").await,
+        "expected later_table to not exist, because the run stopped before the later script"
+    );
+    eprintln!("[4/{TOTAL}] END checking the tables - passed");
+}
+
+#[cfg(feature = "postgres")]
+#[tokio::test]
+#[traced_test]
+async fn test_given_postgres_script_that_is_not_utf8_when_migrations_run_then_failure_is_reported()
+{
+    // What it asserts.
+    // A new PostgreSQL container gets a database with a unique name and a
+    // scripts directory whose one script holds the Latin-1 byte 0xE9. The
+    // database does not exist before the run. The migrations run. The run
+    // fails with "One or more scripts could not be loaded, is the sequence
+    // patterns correct?", logged at ERROR, and logs no "script was run". The
+    // tracking table is empty.
+    const TOTAL: u8 = 3;
+
+    eprintln!("[1/{TOTAL}] BEGIN starting the postgres container");
+    let (_container, connection_string) = postgres::start_the_container().await;
+    eprintln!("[1/{TOTAL}] END starting the postgres container - passed");
+
+    eprintln!("[2/{TOTAL}] BEGIN running the migrations");
+    let database_name = determine_a_unique_database_name("testpostgres");
+    assert!(
+        !postgres::is_database_existing(&connection_string, &database_name).await,
+        "expected the database to not exist before the run"
+    );
+    let migration_configuration = expect_ok(
+        MigrationConfiguration::new(
+            connection_string.as_str(),
+            database_name.as_str(),
+            postgres::determine_the_fixtures_path("test_scripts_not_utf8"),
+            Vec::<String>::new(),
+        ),
+        "invalid migration configuration",
+    );
+    let message = expect_migration_error(
+        try_apply_migrations(
+            DatabaseKind::Postgresql,
+            &migration_configuration,
+            &AtomicBool::new(false),
+        )
+        .await,
+        "expected the run to fail when a script is not UTF-8",
+    );
+    assert_eq!(
+        message,
+        "One or more scripts could not be loaded, is the sequence patterns correct?"
+    );
+    assert_logged!("ERROR", &message);
+    assert!(
+        !logs_contain("script was run"),
+        "expected no script to run when a script could not be read"
+    );
+    eprintln!("[2/{TOTAL}] END running the migrations - passed");
+
+    eprintln!("[3/{TOTAL}] BEGIN reading the tracking table");
+    let rows = postgres::read_the_tracking_rows(&connection_string, &database_name).await;
+    assert!(rows.is_empty(), "expected no tracking rows, got {rows:#?}");
+    eprintln!("[3/{TOTAL}] END reading the tracking table - passed");
 }
 
 #[cfg(feature = "mssql")]
@@ -814,10 +1201,11 @@ async fn test_given_mssql_scripts_already_applied_when_migrations_run_again_then
     // What it asserts.
     // A new SQL Server container gets a database with a unique name, the mssql
     // fixture scripts, and 20211230_001_CreateDB.sql excluded. The database
-    // does not exist before the delete, and it still does not exist after the
-    // delete. The migrations run once, and the tracking table then holds
-    // 20211230_002_Script2.sql and 20211231_001_Script1.sql, in that order.
-    // The migrations then run a second time. The second run
+    // does not exist before the delete. The delete succeeds, and the database
+    // still does not exist after it. The migrations run once and succeed, and
+    // the tracking table then holds 20211230_002_Script2.sql and
+    // 20211231_001_Script1.sql, in that order. The migrations then run a second
+    // time. The second run succeeds, and it
     // logs "setup database executed successfully", "setup versioning table executed
     // successfully", "script was not run because script was already executed" and
     // "migration process executed successfully" at INFO. The tracking table holds
@@ -934,9 +1322,9 @@ async fn test_given_mssql_scripts_already_applied_when_migrations_run_again_then
 async fn test_given_cancelled_flag_when_mssql_migrations_run_then_the_run_stops() {
     // What it asserts.
     // A new SQL Server container gets a database with a unique name and the mssql
-    // fixture scripts. The database does not exist before the delete, and it
-    // still does not exist after the delete. The cancel flag is set to true, and
-    // the migrations run. The run still returns success, logs "migration
+    // fixture scripts. The database does not exist before the delete. The
+    // delete succeeds, and the database still does not exist after it. The
+    // cancel flag is set to true, and the migrations run. The run still returns success, logs "migration
     // process was canceled from the outside" at WARN, and creates no database.
     const TOTAL: u8 = 4;
 
@@ -952,7 +1340,6 @@ async fn test_given_cancelled_flag_when_mssql_migrations_run_then_the_run_stops(
         ),
         "invalid migration configuration",
     );
-    let is_cancelled = AtomicBool::new(false);
     eprintln!("[1/{TOTAL}] END starting the mssql container - passed");
 
     eprintln!("[2/{TOTAL}] BEGIN deleting the database and setting the cancel flag");
@@ -968,6 +1355,7 @@ async fn test_given_cancelled_flag_when_mssql_migrations_run_then_the_run_stops(
         !mssql::is_database_existing(&connection_string, &database_name).await,
         "expected the database to not exist after the delete, before the run"
     );
+    let is_cancelled = AtomicBool::new(false);
     is_cancelled.store(true, Ordering::SeqCst);
     eprintln!("[2/{TOTAL}] END deleting the database and setting the cancel flag - passed");
 
@@ -995,8 +1383,9 @@ async fn test_given_failing_mssql_script_when_migrations_run_then_failure_is_rep
     // What it asserts.
     // A new SQL Server container gets a database with a unique name and the mssql
     // failure fixture scripts: a good script, a broken script and a later script.
-    // The database does not exist before the delete, and it still does not exist
-    // after the delete. The migrations run. The run fails with "migration
+    // The database does not exist before the delete. The delete succeeds, and the
+    // database still does not exist after it. The migrations run. The run fails
+    // with "migration
     // process executed with errors", logged at ERROR, and logs "script was not
     // completed due to exception" at ERROR and "script was skipped due to exception
     // in previous script" at WARN. The tracking table holds exactly one row,
@@ -1083,7 +1472,8 @@ async fn test_given_mssql_scripts_that_cannot_be_loaded_when_migrations_run_then
     // What it asserts.
     // A new SQL Server container gets a database with a unique name and a scripts
     // directory that does not exist. The database does not exist before the
-    // delete, and it still does not exist after the delete. The migrations run.
+    // delete. The delete succeeds, and the database still does not exist after
+    // it. The migrations run.
     // The run fails with "One or more scripts could not be loaded, is the
     // sequence patterns correct?", logged at ERROR, logs "migration process
     // executed with errors" at ERROR, and logs no "script was run". The database
@@ -1310,7 +1700,8 @@ async fn test_given_mssql_database_with_data_when_migrations_run_then_its_data_i
     // The migrations run and succeed, log "setup database executed successfully" and
     // "migration process executed successfully" at INFO, and log no "setup
     // database executed with errors". The marker_table still exists, and the
-    // tracking table holds three rows, one per fixture script.
+    // tracking table holds three rows: 20211230_001_CreateDB.sql,
+    // 20211230_002_Script2.sql and 20211231_001_Script1.sql, in that order.
     const TOTAL: u8 = 4;
 
     eprintln!("[1/{TOTAL}] BEGIN starting the mssql container");
@@ -1373,10 +1764,191 @@ async fn test_given_mssql_database_with_data_when_migrations_run_then_its_data_i
         "expected the pre-existing table to survive — the database must not be recreated"
     );
     let rows = mssql::read_the_tracking_rows(&connection_string, &database_name).await;
+    let filenames: Vec<&str> = rows
+        .iter()
+        .map(|tracking_row| tracking_row.filename.as_str())
+        .collect();
     assert_eq!(
-        rows.len(),
-        3,
-        "expected all three fixture scripts to be tracked, got {rows:#?}"
+        filenames,
+        [
+            "20211230_001_CreateDB.sql",
+            "20211230_002_Script2.sql",
+            "20211231_001_Script1.sql",
+        ],
+        "expected all three fixture scripts to be tracked in order, got {rows:#?}"
     );
     eprintln!("[4/{TOTAL}] END checking the marker table and the tracking table - passed");
+}
+
+#[cfg(feature = "mssql")]
+#[tokio::test]
+#[traced_test]
+async fn test_given_mssql_database_name_with_a_quote_and_a_bracket_when_migrations_run_then_every_script_is_applied()
+ {
+    // What it asserts.
+    // A new SQL Server container gets a database name that ends in
+    // ]o'brien, and the mssql fixture scripts with
+    // 20211230_001_CreateDB.sql excluded. The database does not exist
+    // before the delete. The delete succeeds, and the database still does
+    // not exist after it. The migrations run and succeed, and log
+    // "migration process executed successfully" at INFO. The database then
+    // exists, and the tracking table holds 20211230_002_Script2.sql and
+    // 20211231_001_Script1.sql, in that order. A second delete succeeds,
+    // and the database no longer exists.
+    const TOTAL: u8 = 5;
+
+    eprintln!("[1/{TOTAL}] BEGIN starting the mssql container");
+    let (_container, connection_string) = mssql::start_the_container().await;
+    eprintln!("[1/{TOTAL}] END starting the mssql container - passed");
+
+    eprintln!("[2/{TOTAL}] BEGIN deleting the database");
+    let database_name = format!("{}]o'brien", determine_a_unique_database_name("testmssql"));
+    assert!(
+        !mssql::is_database_existing(&connection_string, &database_name).await,
+        "expected the database to not exist before the delete"
+    );
+    let migration_configuration = expect_ok(
+        MigrationConfiguration::new(
+            connection_string.as_str(),
+            database_name.as_str(),
+            mssql::determine_the_fixtures_path("test_scripts"),
+            ["20211230_001_CreateDB.sql".to_string()],
+        ),
+        "invalid migration configuration",
+    );
+    expect_ok(
+        try_delete_database_if_exists(DatabaseKind::Mssql, &migration_configuration).await,
+        "expected the delete to succeed for a name with a quote and a bracket",
+    );
+    assert!(
+        !mssql::is_database_existing(&connection_string, &database_name).await,
+        "expected the database to not exist after the delete, before the run"
+    );
+    eprintln!("[2/{TOTAL}] END deleting the database - passed");
+
+    eprintln!("[3/{TOTAL}] BEGIN running the migrations");
+    expect_ok(
+        try_apply_migrations(
+            DatabaseKind::Mssql,
+            &migration_configuration,
+            &AtomicBool::new(false),
+        )
+        .await,
+        "expected the migration run to succeed for a name with a quote and a bracket",
+    );
+    assert_logged!("INFO", "migration process executed successfully");
+    eprintln!("[3/{TOTAL}] END running the migrations - passed");
+
+    eprintln!("[4/{TOTAL}] BEGIN checking the database and the tracking table");
+    assert!(
+        mssql::is_database_existing(&connection_string, &database_name).await,
+        "expected the run to create the database"
+    );
+    let rows = mssql::read_the_tracking_rows(&connection_string, &database_name).await;
+    let filenames: Vec<&str> = rows
+        .iter()
+        .map(|tracking_row| tracking_row.filename.as_str())
+        .collect();
+    assert_eq!(
+        filenames,
+        ["20211230_002_Script2.sql", "20211231_001_Script1.sql"],
+        "expected both scripts to be tracked in order, got {rows:#?}"
+    );
+    eprintln!("[4/{TOTAL}] END checking the database and the tracking table - passed");
+
+    eprintln!("[5/{TOTAL}] BEGIN deleting the database again");
+    expect_ok(
+        try_delete_database_if_exists(DatabaseKind::Mssql, &migration_configuration).await,
+        "expected the second delete to succeed",
+    );
+    assert!(
+        !mssql::is_database_existing(&connection_string, &database_name).await,
+        "expected the database to be gone after the second delete"
+    );
+    eprintln!("[5/{TOTAL}] END deleting the database again - passed");
+}
+
+#[cfg(feature = "mssql")]
+#[tokio::test]
+#[traced_test]
+async fn test_given_slow_first_mssql_script_when_the_run_is_cancelled_during_it_then_later_scripts_do_not_run()
+ {
+    // What it asserts.
+    // A new SQL Server container gets a database with a unique name and the
+    // cancel fixtures: a slow first script and a later script. The database
+    // does not exist before the run. The migrations run, and the cancel flag
+    // is set while SQL Server runs the WAITFOR of the first script. The run
+    // returns success, logs "migration process was canceled" at WARN, and
+    // logs no "canceled from the outside". The tracking table holds exactly
+    // 20220201_001_SlowScript.sql. slow_table exists, and later_table does
+    // not.
+    const TOTAL: u8 = 4;
+
+    eprintln!("[1/{TOTAL}] BEGIN starting the mssql container");
+    let (_container, connection_string) = mssql::start_the_container().await;
+    eprintln!("[1/{TOTAL}] END starting the mssql container - passed");
+
+    eprintln!("[2/{TOTAL}] BEGIN running the migrations and cancelling during the first script");
+    let database_name = determine_a_unique_database_name("testmssql");
+    assert!(
+        !mssql::is_database_existing(&connection_string, &database_name).await,
+        "expected the database to not exist before the run"
+    );
+    let migration_configuration = expect_ok(
+        MigrationConfiguration::new(
+            connection_string.as_str(),
+            database_name.as_str(),
+            mssql::determine_the_fixtures_path("test_scripts_cancel"),
+            Vec::<String>::new(),
+        ),
+        "invalid migration configuration",
+    );
+    let is_cancelled = AtomicBool::new(false);
+    let run = try_apply_migrations(DatabaseKind::Mssql, &migration_configuration, &is_cancelled);
+    let cancel = async {
+        let mut tries = 0_u32;
+        while !mssql::is_query_running(&connection_string, "WAITFOR").await {
+            tries += 1;
+            assert!(tries < 200, "expected the slow script to start within 10 s");
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        is_cancelled.store(true, Ordering::SeqCst);
+    };
+    let (result, ()) = tokio::join!(run, cancel);
+    expect_ok(
+        result,
+        "expected a run cancelled between scripts to report success",
+    );
+    assert_logged!("WARN", "migration process was canceled");
+    assert!(
+        !logs_contain("canceled from the outside"),
+        "expected the cancel between scripts, not before the start"
+    );
+    eprintln!(
+        "[2/{TOTAL}] END running the migrations and cancelling during the first script - passed"
+    );
+
+    eprintln!("[3/{TOTAL}] BEGIN reading the tracking table");
+    let rows = mssql::read_the_tracking_rows(&connection_string, &database_name).await;
+    let filenames: Vec<&str> = rows
+        .iter()
+        .map(|tracking_row| tracking_row.filename.as_str())
+        .collect();
+    assert_eq!(
+        filenames,
+        ["20220201_001_SlowScript.sql"],
+        "expected only the slow script to be tracked, got {rows:#?}"
+    );
+    eprintln!("[3/{TOTAL}] END reading the tracking table - passed");
+
+    eprintln!("[4/{TOTAL}] BEGIN checking the tables");
+    assert!(
+        mssql::is_table_existing(&connection_string, &database_name, "slow_table").await,
+        "expected slow_table to have been created by the slow script"
+    );
+    assert!(
+        !mssql::is_table_existing(&connection_string, &database_name, "later_table").await,
+        "expected later_table to not exist, because the run stopped before the later script"
+    );
+    eprintln!("[4/{TOTAL}] END checking the tables - passed");
 }
