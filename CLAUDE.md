@@ -9,4 +9,5 @@ The rules are in three skills in `D:\skills`: `rust-maintainer`,
 `commit-and-push` and `quality-sweep`. Claude Code loads them through the
 junction `~/.claude/skills`. Use `rust-maintainer` for every change to the
 code, `commit-and-push` when a piece of work is done, and `quality-sweep` for
-every quality check.
+every quality check. The migrator is not a game and not jarvis, so each quality
+sweep also uses the skill `governance-quality-checks` in `D:\skills`.

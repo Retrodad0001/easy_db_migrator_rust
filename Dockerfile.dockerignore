@@ -1,0 +1,12 @@
+*
+!Cargo.toml
+!Cargo.lock
+!easy_db_migrator_rust/Cargo.toml
+!easy_db_migrator_rust/src
+!easy_db_migrator_rust/examples
+!retrodad_simple_fitness_app/backend/Cargo.toml
+!retrodad_simple_fitness_app/backend/src
+!retrodad_simple_fitness_app/front_end/Cargo.toml
+!retrodad_simple_fitness_app/front_end/src
+!retrodad_simple_fitness_app/shared/Cargo.toml
+!retrodad_simple_fitness_app/shared/src

@@ -33,3 +33,5 @@ CLAUDE.local.md
 # reading it. That is how h2 0.4.15 stayed in CI after it had been updated
 # everywhere a developer would look.
 Cargo.lock
+
+/reports

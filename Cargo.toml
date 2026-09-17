@@ -13,6 +13,7 @@ publish = false
 [features]
 postgres = ["dep:sqlx"]
 mssql = ["dep:tiberius", "dep:tokio-util", "tokio/net"]
+dhat-heap = []
 
 [dependencies]
 chrono.workspace = true
@@ -24,12 +25,18 @@ tokio-util = { workspace = true, optional = true }
 tracing.workspace = true
 
 [dev-dependencies]
+dhat.workspace = true
 testcontainers.workspace = true
 tracing-test.workspace = true
 
 [[test]]
 name = "integration_tests"
 path = "tests/integration_tests.rs"
+
+[[example]]
+name = "profile_migrations"
+path = "examples/profile_migrations.rs"
+required-features = ["postgres", "mssql"]
 
 [lints]
 workspace = true

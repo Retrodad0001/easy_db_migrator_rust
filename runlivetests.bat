@@ -9,6 +9,8 @@ call :done
 
 set STEP=building the test binaries first
 call :begin
+REM the tests run in the dev profile, without --release, on purpose:
+REM the demo build is faster
 cargo test -p easy_db_migrator_rust --all-targets --all-features --no-run || goto :fail
 call :done
 
