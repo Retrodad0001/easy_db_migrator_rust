@@ -1,0 +1,4 @@
+# Line endings are part of whether a script runs at all. A .bat checked out
+# with LF is unreliable on windows, so it is not left to the platform default.
+* text=auto eol=lf
+*.bat text eol=crlf
