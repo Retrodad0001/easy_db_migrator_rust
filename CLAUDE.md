@@ -5,6 +5,8 @@ This crate is `easy_db_migrator_rust`, a member of the cargo workspace
 holds the project files, the Features table, the Coverage section and the
 Backlog.
 
+The documents and the code of this project use American English.
+
 The rules are in three skills in `D:\skills`: `rust-maintainer`,
 `commit-and-push` and `quality-sweep`. Claude Code loads them through the
 junction `~/.claude/skills`. Use `rust-maintainer` for every change to the

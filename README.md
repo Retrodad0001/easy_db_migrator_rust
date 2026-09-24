@@ -92,7 +92,7 @@ async fn main() -> Result<(), ErrorKind> {
 }
 ```
 
-`AtomicBool::new(false)` starts a run that is not cancelled.
+`AtomicBool::new(false)` starts a run that is not canceled.
 
 Swap `DatabaseKind::Postgresql` for `DatabaseKind::Mssql` to target SQL
 Server.

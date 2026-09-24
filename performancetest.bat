@@ -28,7 +28,7 @@ call :begin
 call :remove_the_databases
 docker network create %NETWORK% >nul || goto :fail
 docker run -d --name %POSTGRES% --network %NETWORK% -e POSTGRES_PASSWORD=postgres postgres:17-alpine >nul || goto :fail
-docker run -d --name %MSSQL% --network %NETWORK% -e ACCEPT_EULA=Y -e MSSQL_PID=Developer -e "MSSQL_SA_PASSWORD=%SA_PASSWORD%" mcr.microsoft.com/mssql/server:2022-CU26-ubuntu-22.04 >nul || goto :fail
+docker run -d --name %MSSQL% --network %NETWORK% -e ACCEPT_EULA=Y -e MSSQL_PID=Developer -e "MSSQL_SA_PASSWORD=%SA_PASSWORD%" mcr.microsoft.com/mssql/server:2022-CU27-ubuntu-22.04 >nul || goto :fail
 call :done
 
 set STEP=profiling the migrator with hyperfine, cargo-flamegraph and dhat
@@ -274,7 +274,7 @@ $runRows = [ordered]@{
     'Rust' = 'rustc ' + (ConvertTo-EncodedHtml $rustVersion)
     'Program' = 'the profile program <code>examples/profile_migrations.rs</code>, one run per migration run'
     'Scripts' = '100 scripts, <code>20260101_001_create_table_001.sql</code> to <code>20260101_100_create_table_100.sql</code>, each creates one table'
-    'Databases' = '<code>postgres:17-alpine</code> and <code>mcr.microsoft.com/mssql/server:2022-CU26-ubuntu-22.04</code>, each in its own container, on one Docker network with the profile container'
+    'Databases' = '<code>postgres:17-alpine</code> and <code>mcr.microsoft.com/mssql/server:2022-CU27-ubuntu-22.04</code>, each in its own container, on one Docker network with the profile container'
     'Run time' = 'hyperfine ' + (ConvertTo-EncodedHtml $hyperfineVersion) + ': 3 warm-up runs and 20 measured runs per load'
     'CPU time' = 'cargo-flamegraph ' + (ConvertTo-EncodedHtml $flamegraphVersion) + ' with perf ' + (ConvertTo-EncodedHtml $perfVersion) + ': one flamegraph per load'
     'Heap' = 'dhat ' + (ConvertTo-EncodedHtml $dhatVersion) + ' through the feature <code>dhat-heap</code>: one <code>dhat-heap.json</code> per load'
@@ -353,7 +353,7 @@ foreach ($load in $loads) {
 [void] $page.Append(@'
 <section id="bottlenecks">
 <h2>Bottlenecks</h2>
-<p id="bottlenecks-waiting">The agent has not analysed this run yet. After every run it writes one point per bottleneck here, with the CPU time or the memory it takes, a tip, and the code.</p>
+<p id="bottlenecks-waiting">The agent has not analyzed this run yet. After every run it writes one point per bottleneck here, with the CPU time or the memory it takes, a tip, and the code.</p>
 </section>
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.2/highlight.min.js" integrity="sha512-VSPLUv/n1Bmn+4zoxBNwpuFAO3//79I0Aax/qHDx24R47vylPcc9PrHDCqlePwHnh3joiM7/YTQhcXyQAAxvPQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>

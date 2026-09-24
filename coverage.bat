@@ -16,7 +16,7 @@ set STEP=coverage of the integration tests
 call :begin
 cargo llvm-cov clean --workspace || goto :fail
 REM this measure has no --release on purpose: coverage needs an instrumented build,
-REM and an optimised build inlines code so its line numbers stop matching the source
+REM and an optimized build inlines code so its line numbers stop matching the source
 cargo llvm-cov -p easy_db_migrator_rust --all-features --test integration_tests --ignore-filename-regex "%FILTER%" --show-missing-lines || goto :fail
 cargo llvm-cov report -p easy_db_migrator_rust --ignore-filename-regex "%FILTER%" --html --output-dir "%REPORT%" || goto :fail
 call :done

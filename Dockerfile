@@ -11,7 +11,10 @@ COPY easy_db_migrator_rust ./easy_db_migrator_rust
 COPY retrodad_simple_fitness_app ./retrodad_simple_fitness_app
 ARG CARGO_PROFILE_RELEASE_DEBUG
 ENV CARGO_PROFILE_RELEASE_DEBUG=${CARGO_PROFILE_RELEASE_DEBUG} CARGO_PROFILE_RELEASE_STRIP=none
-RUN set -eu; \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,target=/build/target-profile,sharing=locked \
+    set -eu; \
     cargo build --release -p easy_db_migrator_rust --example profile_migrations \
         --features postgres,mssql --target-dir /build/target-profile; \
     cp /build/target-profile/release/examples/profile_migrations /build/profile-migrations; \

@@ -29,7 +29,9 @@ call :done
 
 set STEP=clippy
 call :begin
-cargo clippy %PACKAGES% --all-targets %FEATURES% -- -D warnings || goto :fail
+REM --release on purpose: the tests and the image build in release, and a warning
+REM that only the release build raises must fail this step too
+cargo clippy %PACKAGES% --all-targets --release %FEATURES% -- -D warnings || goto :fail
 call :done
 
 set STEP=unit tests
