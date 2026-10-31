@@ -378,7 +378,7 @@ $runRows = [ordered]@{
     'Run started' = $runStart
     'Build' = 'release profile with <code>debug = true</code> and <code>CARGO_PROFILE_RELEASE_DEBUG=true</code>, with the symbols kept, in the image <code>easy-db-migrator:profile</code>'
     'Rust' = 'rustc ' + (ConvertTo-EncodedHtml $rustVersion)
-    'Program' = 'the profile program <code>examples/profile_migrations.rs</code>, one run per migration run'
+    'Program' = 'the profile program <code>profiling/profile_migrations.rs</code>, one run per migration run'
     'Scripts' = '100 and 1,000 scripts that each create one table, and one script that creates a table and inserts 10,000 rows. Each set runs new and already applied, on both databases, so the report shows how the cost grows'
     'Databases' = '<code>postgres:17-alpine</code> and <code>mcr.microsoft.com/mssql/server:2022-CU27-ubuntu-22.04</code>, each in its own container, on one Docker network with the profile container'
     'Run time' = 'hyperfine ' + (ConvertTo-EncodedHtml $hyperfineVersion) + ': 3 warm-up runs and 20 measured runs for the 100 scripts, 1 warm-up run and 5 measured runs for the other loads'

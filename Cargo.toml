@@ -35,7 +35,7 @@ path = "tests/integration_tests.rs"
 
 [[example]]
 name = "profile_migrations"
-path = "examples/profile_migrations.rs"
+path = "profiling/profile_migrations.rs"
 required-features = ["postgres", "mssql"]
 
 [lints.rust]

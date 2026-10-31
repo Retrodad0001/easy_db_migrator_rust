@@ -8,7 +8,7 @@ RUN cargo install --locked hyperfine --version 1.20.0 \
     && cargo install --locked flamegraph --version 0.6.14
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
-COPY examples ./examples
+COPY profiling ./profiling
 COPY tests ./tests
 ARG CARGO_PROFILE_RELEASE_DEBUG
 ENV CARGO_PROFILE_RELEASE_DEBUG=${CARGO_PROFILE_RELEASE_DEBUG} CARGO_PROFILE_RELEASE_STRIP=none
