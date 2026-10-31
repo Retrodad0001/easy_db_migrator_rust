@@ -18,10 +18,7 @@ runs against it, and drops it again afterwards.
 
 ## Installing
 
-The crate builds only inside its cargo workspace, `workspace_business`.
-The workspace root holds the edition, the dependency versions, the lints
-and the release profile, and this crate takes all four from it. A git
-dependency on this repository alone does not build.
+The crate is not published on crates.io, so you take it as a git dependency.
 
 Each backend is a Cargo feature, and you name the one you want:
 
@@ -30,18 +27,10 @@ Each backend is a Cargo feature, and you name the one you want:
 | `postgres` | PostgreSQL | `sqlx` |
 | `mssql` | Microsoft SQL Server | `tiberius` |
 
-The workspace root names the crate once, by its path:
-
 ```toml
-[workspace.dependencies]
-easy_db_migrator_rust = { path = "easy_db_migrator_rust" }
-```
-
-A member of the workspace takes it from the root, with its backends:
-
-```toml
-[dependencies]
-easy_db_migrator_rust = { workspace = true, features = ["postgres"] }
+[dependencies.easy_db_migrator_rust]
+git = "https://github.com/Retrodad0001/easy_db_migrator_rust"
+features = ["postgres"]
 ```
 
 Name both if you migrate both: `features = ["postgres", "mssql"]`.
@@ -104,11 +93,12 @@ list of script filenames to exclude from the run.
 connection string is blank, or when the database name is empty or has more
 than one word.
 
-## Cancelling a run
+## Canceling a run
 
 Store `true` in the `AtomicBool` to stop a run before its next script. The
-run reads the flag between scripts, so a script is either applied in full or
-not at all. To cancel from another task, share the flag through an
+run reads the flag before it starts and between scripts, so a script is either
+applied in full or not at all. A canceled run is not a failure and returns
+`Ok(())`. To cancel from another task, share the flag through an
 `Arc<AtomicBool>` and pass a reference to it to the run.
 
 ## Using it for integration testing
@@ -155,6 +145,11 @@ Every call that can fail returns `ErrorKind`:
 | `Io` | A general I/O error, such as a failed TCP connection |
 | `Postgres` | A PostgreSQL driver error, with the `postgres` feature |
 | `Mssql` | A SQL Server driver error, with the `mssql` feature |
+
+`try_apply_migrations` and `try_delete_database_if_exists` return only
+`MigrationFailed`, and `MigrationConfiguration::new` returns only
+`InvalidConfig`. The other variants stay inside the run, and `tracing` reports
+their details.
 
 ## Alternatives
 

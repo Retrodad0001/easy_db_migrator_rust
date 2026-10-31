@@ -1,7 +1,7 @@
 [package]
 name = "easy_db_migrator_rust"
-version = "1.0.2"
-edition.workspace = true
+version = "1.0.3"
+edition = "2024"
 description = "A lightweight, plain-SQL database migration library for PostgreSQL and SQL Server."
 license = "MIT"
 repository = "https://github.com/Retrodad0001/easy_db_migrator_rust"
@@ -16,18 +16,18 @@ mssql = ["dep:tiberius", "dep:tokio-util", "tokio/net"]
 dhat-heap = []
 
 [dependencies]
-chrono.workspace = true
-sqlx = { workspace = true, optional = true }
-thiserror.workspace = true
-tiberius = { workspace = true, optional = true }
-tokio = { workspace = true, features = ["time", "sync"] }
-tokio-util = { workspace = true, optional = true }
-tracing.workspace = true
+chrono = "0.4.45"
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-native-roots", "postgres", "chrono"], optional = true }
+thiserror = "2.0.21"
+tiberius = { version = "0.12.3", default-features = false, features = ["tds73", "chrono", "native-tls"], optional = true }
+tokio = { version = "1.53.3", features = ["rt-multi-thread", "macros", "time", "sync"] }
+tokio-util = { version = "0.7.19", features = ["compat"], optional = true }
+tracing = "0.1.44"
 
 [dev-dependencies]
-dhat.workspace = true
-testcontainers.workspace = true
-tracing-test.workspace = true
+dhat = "0.3.3"
+testcontainers = "0.28.0"
+tracing-test = { version = "0.2.6", features = ["no-env-filter"] }
 
 [[test]]
 name = "integration_tests"
@@ -38,5 +38,67 @@ name = "profile_migrations"
 path = "examples/profile_migrations.rs"
 required-features = ["postgres", "mssql"]
 
-[lints]
-workspace = true
+[lints.rust]
+unused = { level = "deny", priority = -1 }
+missing_docs = "deny"
+unreachable_pub = "deny"
+unsafe_code = "forbid"
+unused_must_use = "deny"
+unused_extern_crates = "deny"
+unused_lifetimes = "deny"
+redundant_lifetimes = "deny"
+unused_macro_rules = "deny"
+unused_qualifications = "deny"
+redundant_imports = "deny"
+unfulfilled_lint_expectations = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+unwrap_in_result = "deny"
+get_unwrap = "deny"
+let_underscore_must_use = "deny"
+unused_result_ok = "deny"
+map_err_ignore = "deny"
+wildcard_enum_match_arm = "deny"
+wildcard_imports = "deny"
+match_wildcard_for_single_variants = "deny"
+panic = "deny"
+unreachable = "deny"
+unimplemented = "deny"
+todo = "deny"
+indexing_slicing = "deny"
+exit = "deny"
+panic_in_result_fn = "deny"
+missing_assert_message = "deny"
+format_push_string = "deny"
+implicit_clone = "deny"
+inefficient_to_string = "deny"
+iter_with_drain = "deny"
+large_types_passed_by_value = "deny"
+needless_collect = "deny"
+needless_pass_by_value = "deny"
+redundant_clone = "deny"
+trivially_copy_pass_by_ref = "deny"
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+unused_self = "deny"
+unused_async = "deny"
+unnecessary_wraps = "deny"
+print_stdout = "deny"
+manual_let_else = "deny"
+match_same_arms = "deny"
+redundant_else = "deny"
+semicolon_if_nothing_returned = "deny"
+
+[profile.release]
+lto = true
+opt-level = 3
+codegen-units = 1
+incremental = false
+debug = true
+
+[profile.bench]
+inherits = "release"
+lto = "thin"
+codegen-units = 16

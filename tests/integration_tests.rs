@@ -1,4 +1,8 @@
-#![allow(clippy::panic, missing_docs)]
+#![allow(
+    clippy::panic,
+    missing_docs,
+    reason = "a test fails by panicking, and a test crate has no public API to document"
+)]
 
 mod test_support;
 
