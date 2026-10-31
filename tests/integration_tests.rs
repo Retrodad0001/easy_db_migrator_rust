@@ -4,7 +4,7 @@
     reason = "a test fails by panicking, and a test crate has no public API to document"
 )]
 
-mod test_support;
+mod test_helpers;
 
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -24,10 +24,10 @@ use tokio_util::compat::TokioAsyncWriteCompatExt;
 use tracing_test::traced_test;
 
 #[cfg(feature = "postgres")]
-use test_support::postgres;
+use test_helpers::postgres;
 
 #[cfg(feature = "mssql")]
-use test_support::mssql;
+use test_helpers::mssql;
 
 #[cfg(feature = "postgres")]
 #[tokio::test]
