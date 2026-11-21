@@ -30,4 +30,11 @@ CLAUDE.local.md
 # their own.
 Cargo.lock
 
+# Reports written by validate.bat and performancetest.bat
 /reports
+
+# Cache of the markdown linter (rumdl also ignores it from inside the folder)
+.rumdl_cache/
+
+# Object files rustc writes when it is run by hand outside cargo
+*.o

@@ -1,9 +1,9 @@
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use chrono::{DateTime, Utc};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::{AssertSqlSafe, Connection, Executor, PgConnection};
+use time::OffsetDateTime;
 
 use crate::{
     CRATE_VERSION, backend::run_migration_result_kind::RunMigrationResultKind,
@@ -58,7 +58,7 @@ pub(crate) async fn try_delete_database_if_exists(
     migration_configuration: &MigrationConfiguration,
 ) -> Result<(), ErrorKind> {
     let mut connection = try_connect_admin(migration_configuration).await?;
-    connection
+    let _drop_result = connection
         .execute(AssertSqlSafe(determine_the_drop_database_query(
             migration_configuration,
         )))
@@ -77,7 +77,7 @@ pub(crate) async fn try_create_database_if_missing(
         .await?;
 
     if exists.is_none() {
-        connection
+        let _create_result = connection
             .execute(AssertSqlSafe(determine_the_create_database_query(
                 migration_configuration,
             )))
@@ -91,7 +91,7 @@ pub(crate) async fn try_ensure_tracking_table(
     migration_configuration: &MigrationConfiguration,
 ) -> Result<(), ErrorKind> {
     let mut connection = try_connect_target(migration_configuration).await?;
-    connection
+    let _create_result = connection
         .execute(AssertSqlSafe(format!(
             "CREATE TABLE IF NOT EXISTS {TRACKING_TABLE} (
                 id SERIAL PRIMARY KEY,
@@ -107,7 +107,7 @@ pub(crate) async fn try_ensure_tracking_table(
 pub(crate) async fn try_run_script(
     migration_configuration: &MigrationConfiguration,
     script: &Script,
-    date_time: DateTime<Utc>,
+    date_time: OffsetDateTime,
     is_cancelled: &AtomicBool,
 ) -> Result<RunMigrationResultKind, ErrorKind> {
     if is_cancelled.load(Ordering::SeqCst) {
@@ -129,11 +129,11 @@ pub(crate) async fn try_run_script(
 
     let mut transaction = connection.begin().await?;
 
-    transaction
+    let _script_result = transaction
         .execute(AssertSqlSafe(script.content.as_str()))
         .await?;
 
-    sqlx::query(AssertSqlSafe(format!(
+    let _insert_result = sqlx::query(AssertSqlSafe(format!(
         "INSERT INTO {TRACKING_TABLE} (executed_at, filename, version) VALUES ($1, $2, $3)"
     )))
     .bind(date_time)

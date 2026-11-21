@@ -10,10 +10,6 @@ on:
     - cron: "30 23 * * 5"
   workflow_dispatch:
 
-env:
-  PACKAGES: -p easy_db_migrator_rust
-  FEATURES: --features postgres,mssql
-
 jobs:
   validate:
     # Linux on purpose: the integration tests start the Linux images of PostgreSQL
@@ -37,7 +33,7 @@ jobs:
       - name: Install cargo-audit and cargo-llvm-cov
         uses: taiki-e/install-action@7572810d7dd469b651bb7793945692cf78da5dd7 # v2
         with:
-          tool: cargo-audit@0.23.0,cargo-llvm-cov@0.9.1
+          tool: cargo-audit@0.23.0,cargo-llvm-cov@0.9.2
 
       - name: Install rumdl and typos
         run: |
@@ -59,7 +55,7 @@ jobs:
         run: |
           echo "BEGIN format"
           trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END format - passed"; else echo "END format - FAILED"; fi' EXIT
-          cargo fmt $PACKAGES --check
+          cargo fmt -p easy_db_migrator_rust --check
 
       - name: markdown lint
         if: ${{ !cancelled() }}
@@ -89,7 +85,7 @@ jobs:
         run: |
           echo "BEGIN clippy"
           trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END clippy - passed"; else echo "END clippy - FAILED"; fi' EXIT
-          cargo clippy $PACKAGES --all-targets --release $FEATURES -- -D warnings
+          cargo clippy -p easy_db_migrator_rust --all-targets --release --features postgres,mssql -- -D warnings
 
       - name: cargo audit
         if: ${{ !cancelled() }}
@@ -103,21 +99,21 @@ jobs:
         run: |
           echo "BEGIN unit tests"
           trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END unit tests - passed"; else echo "END unit tests - FAILED"; fi' EXIT
-          cargo test $PACKAGES --release --lib $FEATURES
+          cargo test -p easy_db_migrator_rust --release --lib --features postgres,mssql
 
       - name: integration tests
         if: ${{ !cancelled() }}
         run: |
           echo "BEGIN integration tests"
           trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END integration tests - passed"; else echo "END integration tests - FAILED"; fi' EXIT
-          cargo test $PACKAGES --release --test '*' $FEATURES
+          cargo test -p easy_db_migrator_rust --release --test '*' --features postgres,mssql
 
       - name: doc tests
         if: ${{ !cancelled() }}
         run: |
           echo "BEGIN doc tests"
           trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END doc tests - passed"; else echo "END doc tests - FAILED"; fi' EXIT
-          cargo test $PACKAGES --release --doc $FEATURES
+          cargo test -p easy_db_migrator_rust --release --doc --features postgres,mssql
 
       # no --release on purpose: coverage needs an instrumented build, and an
       # optimized build inlines code so its line numbers stop matching the source
@@ -127,4 +123,4 @@ jobs:
           echo "BEGIN coverage of the integration tests"
           trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END coverage of the integration tests - passed"; else echo "END coverage of the integration tests - FAILED"; fi' EXIT
           cargo llvm-cov clean --workspace
-          cargo llvm-cov $PACKAGES --all-features --test integration_tests --ignore-filename-regex '(tests[\\/])' --show-missing-lines
+          cargo llvm-cov -p easy_db_migrator_rust --all-features --test integration_tests --ignore-filename-regex '(tests[\\/])' --show-missing-lines

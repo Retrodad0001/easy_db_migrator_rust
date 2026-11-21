@@ -1,14 +1,19 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use chrono::{DateTime, Utc};
 use tiberius::{Client, Config, Query};
+use time::OffsetDateTime;
 use tokio::net::TcpStream;
 use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
 use tracing::error;
 
 use crate::{
-    CRATE_VERSION, backend::run_migration_result_kind::RunMigrationResultKind,
-    error_kind::ErrorKind, migration_configuration::MigrationConfiguration, script::Script,
+    CRATE_VERSION,
+    backend::{
+        mssql_executed_at::MssqlExecutedAt, run_migration_result_kind::RunMigrationResultKind,
+    },
+    error_kind::ErrorKind,
+    migration_configuration::MigrationConfiguration,
+    script::Script,
 };
 
 const TRACKING_TABLE: &str = "DbMigrationsRun";
@@ -72,7 +77,7 @@ pub(crate) async fn try_delete_database_if_exists(
     let mut client = try_connect_admin(migration_configuration).await?;
     let mut query = Query::new(determine_the_drop_database_query(migration_configuration));
     query.bind(migration_configuration.database_name.as_str());
-    query.execute(&mut client).await?;
+    let _execute_result = query.execute(&mut client).await?;
     Ok(())
 }
 
@@ -82,7 +87,7 @@ pub(crate) async fn try_create_database_if_missing(
     let mut client = try_connect_admin(migration_configuration).await?;
     let mut query = Query::new(determine_the_create_database_query(migration_configuration));
     query.bind(migration_configuration.database_name.as_str());
-    query.execute(&mut client).await?;
+    let _execute_result = query.execute(&mut client).await?;
     Ok(())
 }
 
@@ -101,14 +106,14 @@ pub(crate) async fn try_ensure_tracking_table(
             )
          END"
     );
-    Query::new(query).execute(&mut client).await?;
+    let _create_result = Query::new(query).execute(&mut client).await?;
     Ok(())
 }
 
 pub(crate) async fn try_run_script(
     migration_configuration: &MigrationConfiguration,
     script: &Script,
-    date_time: DateTime<Utc>,
+    date_time: OffsetDateTime,
     is_cancelled: &AtomicBool,
 ) -> Result<RunMigrationResultKind, ErrorKind> {
     if is_cancelled.load(Ordering::SeqCst) {
@@ -153,22 +158,22 @@ pub(crate) async fn try_run_script(
 async fn try_run_script_in_transaction(
     client: &mut Client<Compat<TcpStream>>,
     script: &Script,
-    date_time: DateTime<Utc>,
+    date_time: OffsetDateTime,
 ) -> Result<(), ErrorKind> {
-    client
+    let _begin_results = client
         .simple_query("BEGIN TRANSACTION")
         .await?
         .into_results()
         .await?;
-    Query::new(script.content.as_str()).execute(client).await?;
+    let _script_result = Query::new(script.content.as_str()).execute(client).await?;
     let mut insert_query = Query::new(format!(
         "INSERT INTO {TRACKING_TABLE} (ExecutedAt, Filename, Version) VALUES (@P1, @P2, @P3)"
     ));
-    insert_query.bind(date_time);
+    insert_query.bind(MssqlExecutedAt(date_time));
     insert_query.bind(script.filename.as_str());
     insert_query.bind(CRATE_VERSION);
-    insert_query.execute(client).await?;
-    client
+    let _insert_result = insert_query.execute(client).await?;
+    let _commit_results = client
         .simple_query("COMMIT TRANSACTION")
         .await?
         .into_results()

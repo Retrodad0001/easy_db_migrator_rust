@@ -24,11 +24,8 @@ pub(crate) fn sweep_leftover_containers(test_label: &str) {
 
     for id in ids.split_whitespace() {
         eprintln!("removing container {id} left behind by an earlier run");
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "a leftover container that cannot be removed does not change a test result"
-        )]
-        let _ = std::process::Command::new("docker")
+        // a leftover container that cannot be removed does not change a test result
+        let _removal = std::process::Command::new("docker")
             .args(["rm", "-f", id])
             .output();
     }

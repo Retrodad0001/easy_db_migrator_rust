@@ -16,10 +16,10 @@ mssql = ["dep:tiberius", "dep:tokio-util", "tokio/net"]
 dhat-heap = []
 
 [dependencies]
-chrono = "0.4.45"
-sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-native-roots", "postgres", "chrono"], optional = true }
+sqlx = { version = "0.9.1", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-native-roots", "postgres", "time"], optional = true }
 thiserror = "2.0.21"
-tiberius = { version = "0.12.3", default-features = false, features = ["tds73", "chrono", "native-tls"], optional = true }
+tiberius = { version = "0.12.3", default-features = false, features = ["tds73", "time", "native-tls"], optional = true }
+time = "0.3.55"
 tokio = { version = "1.53.3", features = ["rt-multi-thread", "macros", "time", "sync"] }
 tokio-util = { version = "0.7.19", features = ["compat"], optional = true }
 tracing = "0.1.44"
@@ -32,6 +32,7 @@ tracing-test = { version = "0.2.6", features = ["no-env-filter"] }
 [[test]]
 name = "integration_tests"
 path = "tests/integration_tests.rs"
+required-features = ["postgres", "mssql"]
 
 [[example]]
 name = "profile_migrations"
@@ -51,8 +52,59 @@ unused_macro_rules = "deny"
 unused_qualifications = "deny"
 redundant_imports = "deny"
 unfulfilled_lint_expectations = "deny"
+absolute_paths_not_starting_with_crate = "deny"
+ambiguous_negative_literals = "deny"
+closure_returning_async_block = "deny"
+deprecated_in_future = "deny"
+deprecated_safe_2024 = "deny"
+deref_into_dyn_supertrait = "deny"
+edition_2024_expr_fragment_specifier = "deny"
+elided_lifetimes_in_paths = "deny"
+explicit_outlives_requirements = "deny"
+ffi_unwind_calls = "deny"
+if_let_rescope = "deny"
+impl_trait_overcaptures = "deny"
+impl_trait_redundant_captures = "deny"
+keyword_idents_2018 = "deny"
+keyword_idents_2024 = "deny"
+let_underscore_drop = "deny"
+linker_info = "deny"
+macro_use_extern_crate = "deny"
+meta_variable_misuse = "deny"
+missing_copy_implementations = "deny"
+missing_debug_implementations = "deny"
+missing_unsafe_on_extern = "deny"
+non_ascii_idents = "deny"
+raw_borrows_via_references = "deny"
+rust_2021_incompatible_closure_captures = "deny"
+rust_2021_incompatible_or_patterns = "deny"
+rust_2021_prefixes_incompatible_syntax = "deny"
+rust_2021_prelude_collisions = "deny"
+rust_2024_guarded_string_incompatible_syntax = "deny"
+rust_2024_incompatible_pat = "deny"
+rust_2024_prelude_collisions = "deny"
+single_use_lifetimes = "deny"
+tail_expr_drop_order = "deny"
+trivial_casts = "deny"
+trivial_numeric_casts = "deny"
+unit_bindings = "deny"
+unnameable_types = "deny"
+unsafe_attr_outside_unsafe = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+unstable_features = "deny"
+unused_crate_dependencies = "deny"
+unused_import_braces = "deny"
+unused_results = "deny"
+variant_size_differences = "deny"
 
 [lints.clippy]
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+cargo = { level = "deny", priority = -1 }
+# contradicts unreachable_pub: that lint wants pub(crate) inside private modules
+redundant_pub_crate = "allow"
+# the duplicate versions come from dependencies, so this crate cannot remove them
+multiple_crate_versions = "allow"
 unwrap_used = "deny"
 expect_used = "deny"
 unwrap_in_result = "deny"

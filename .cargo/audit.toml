@@ -1,0 +1,12 @@
+# cargo audit reads this file from the project root. Every ignored advisory
+# names why it cannot be fixed here; remove it once a fixed version exists.
+[advisories]
+ignore = [
+    # astral-tokio-tar is unmaintained, with no fixed version. Only testcontainers,
+    # a dev-dependency, uses it to start the test databases; it never ships.
+    "RUSTSEC-2026-0440",
+    # chrono is unmaintained, with no fixed version. The crate uses `time` instead;
+    # chrono stays in Cargo.lock only as an optional dependency of serde_with
+    # (through testcontainers), and no build compiles it.
+    "RUSTSEC-2026-0543",
+]

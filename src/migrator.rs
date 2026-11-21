@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use chrono::Utc;
+use time::OffsetDateTime;
 use tracing::{error, info, warn};
 
 use crate::{
@@ -15,8 +15,10 @@ use crate::{
 
 /// Deletes the configured database if it exists.
 ///
-/// On failure the returned [`ErrorKind::MigrationFailed`] carries the same text that
-/// was reported through `tracing`.
+/// # Errors
+///
+/// Returns [`ErrorKind::MigrationFailed`] when the database cannot be reached or
+/// dropped. It carries the same text that was reported through `tracing`.
 pub async fn try_delete_database_if_exists(
     database_kind: DatabaseKind,
     migration_configuration: &MigrationConfiguration,
@@ -51,14 +53,20 @@ pub async fn try_delete_database_if_exists(
 /// directory, creating the database and tracking table first if needed.
 ///
 /// The run reads `is_cancelled` before it starts and between scripts, and stops
-/// when it reads `true`. A cancelled run is not a failure and returns `Ok(())`. On
-/// failure the returned [`ErrorKind::MigrationFailed`] carries the same text that
-/// was reported through `tracing`.
+/// when it reads `true`. A cancelled run is not a failure and returns `Ok(())`.
+///
+/// # Errors
+///
+/// Returns [`ErrorKind::MigrationFailed`] when the database or the tracking table
+/// cannot be created, the scripts cannot be loaded, or a script fails. It carries
+/// the same text that was reported through `tracing`.
 pub async fn try_apply_migrations(
     database_kind: DatabaseKind,
     migration_configuration: &MigrationConfiguration,
     is_cancelled: &AtomicBool,
 ) -> Result<(), ErrorKind> {
+    const MIGRATION_FAILED: &str = "migration process executed with errors";
+
     if is_cancelled.load(Ordering::SeqCst) {
         warn!("migration process was canceled from the outside");
         return Ok(());
@@ -68,8 +76,6 @@ pub async fn try_apply_migrations(
         database = migration_configuration.database_name.as_str(),
         "start running migrations for database"
     );
-
-    const MIGRATION_FAILED: &str = "migration process executed with errors";
 
     let create_database_result = match database_kind {
         #[cfg(feature = "postgres")]
@@ -171,7 +177,7 @@ async fn run_migration_scripts(
             continue;
         }
 
-        let date_time = Utc::now();
+        let date_time = OffsetDateTime::now_utc();
         let result = match database_kind {
             #[cfg(feature = "postgres")]
             DatabaseKind::Postgresql => {

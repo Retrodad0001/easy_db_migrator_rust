@@ -55,7 +55,7 @@ async fn connect(connection_string: &str, database_name: &str) -> PgConnection {
 
 pub(crate) async fn create_the_database(connection_string: &str, database_name: &str) {
     let mut connection = connect(connection_string, "postgres").await;
-    expect_ok(
+    let _execute_result = expect_ok(
         connection
             .execute(AssertSqlSafe(format!(
                 "CREATE DATABASE \"{database_name}\""
@@ -71,7 +71,7 @@ pub(crate) async fn execute_in_the_database(
     sql: &str,
 ) {
     let mut connection = connect(connection_string, database_name).await;
-    expect_ok(
+    let _execute_result = expect_ok(
         connection.execute(AssertSqlSafe(sql.to_string())).await,
         "failed to run setup statement",
     );
@@ -83,7 +83,7 @@ pub(crate) async fn set_whether_the_database_accepts_connections(
     is_accepting: bool,
 ) {
     let mut connection = connect(connection_string, "postgres").await;
-    expect_ok(
+    let _execute_result = expect_ok(
         connection
             .execute(AssertSqlSafe(format!(
                 "ALTER DATABASE \"{database_name}\" WITH ALLOW_CONNECTIONS {is_accepting}"

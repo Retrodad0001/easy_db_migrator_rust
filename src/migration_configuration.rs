@@ -14,8 +14,12 @@ pub struct MigrationConfiguration {
 
 impl MigrationConfiguration {
     /// Builds a new configuration, taking the script filenames to exclude from the
-    /// run. It refuses a blank connection string, and a database name that is empty
-    /// or has more than one word.
+    /// run.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ErrorKind::InvalidConfig`] for a blank connection string, and for a
+    /// database name that is empty or has more than one word.
     pub fn new(
         connection_string: impl Into<String>,
         database_name: impl Into<String>,

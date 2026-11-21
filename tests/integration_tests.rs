@@ -12,13 +12,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
-use chrono::{DateTime, Utc};
 use easy_db_migrator_rust::{
     DatabaseKind, MigrationConfiguration, try_apply_migrations, try_delete_database_if_exists,
 };
 use sqlx::postgres::PgConnectOptions;
 use sqlx::{Connection, PgConnection, Row};
 use tiberius::{Client, Config, Query};
+use time::OffsetDateTime;
 use tokio::net::TcpStream;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 use tracing_test::traced_test;
@@ -32,8 +32,16 @@ use test_helpers::mssql;
 #[cfg(feature = "postgres")]
 #[tokio::test]
 #[traced_test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "each step of the test checks the database before and after the call, so the test reads top to bottom"
+)]
 async fn test_given_empty_postgres_database_when_migrations_run_then_every_script_is_applied_and_tracked()
  {
+    const CUSTOMERS: &str = "customers";
+    const DISTRIBUTORS: &str = "distributors";
+    const SCHOOLS: &str = "schools";
+
     // What it asserts.
     // A new PostgreSQL container gets a database with a unique name, the postgres
     // fixture scripts, and 20211230_001_DoStuffScript.sql excluded. The database
@@ -136,14 +144,14 @@ async fn test_given_empty_postgres_database_when_migrations_run_then_every_scrip
     eprintln!("[2/{TOTAL}] END deleting the database - passed");
 
     eprintln!("[3/{TOTAL}] BEGIN running the migrations");
-    let before = Utc::now();
+    let before = OffsetDateTime::now_utc();
     let applied = try_apply_migrations(
         DatabaseKind::Postgresql,
         &migration_configuration,
         &AtomicBool::new(false),
     )
     .await;
-    let after = Utc::now();
+    let after = OffsetDateTime::now_utc();
     assert!(
         applied.is_ok(),
         "the migration run should succeed, and it reports {applied:?}"
@@ -201,7 +209,7 @@ async fn test_given_empty_postgres_database_when_migrations_run_then_every_scrip
         first_filename, FIRST_SCRIPT,
         "the first tracking row should name {FIRST_SCRIPT}, and it names {first_filename}"
     );
-    let first_executed_at: DateTime<Utc> = first.get("executed_at");
+    let first_executed_at: OffsetDateTime = first.get("executed_at");
     assert!(
         before <= first_executed_at && first_executed_at <= after,
         "the first row should be stamped between {before} and {after}, and it is stamped {first_executed_at}"
@@ -217,7 +225,7 @@ async fn test_given_empty_postgres_database_when_migrations_run_then_every_scrip
         second_filename, SECOND_SCRIPT,
         "the second tracking row should name {SECOND_SCRIPT}, and it names {second_filename}"
     );
-    let second_executed_at: DateTime<Utc> = second.get("executed_at");
+    let second_executed_at: OffsetDateTime = second.get("executed_at");
     assert!(
         before <= second_executed_at && second_executed_at <= after,
         "the second row should be stamped between {before} and {after}, and it is stamped {second_executed_at}"
@@ -225,7 +233,6 @@ async fn test_given_empty_postgres_database_when_migrations_run_then_every_scrip
     eprintln!("[4/{TOTAL}] END reading the tracking table - passed");
 
     eprintln!("[5/{TOTAL}] BEGIN checking the tables");
-    const CUSTOMERS: &str = "customers";
     let customers: Option<String> = match sqlx::query_scalar("SELECT to_regclass($1)::text")
         .bind(CUSTOMERS)
         .fetch_one(&mut migrated)
@@ -238,7 +245,6 @@ async fn test_given_empty_postgres_database_when_migrations_run_then_every_scrip
         customers.is_some(),
         "{CUSTOMERS} should have been created by {FIRST_SCRIPT}, and it does not exist"
     );
-    const DISTRIBUTORS: &str = "distributors";
     let distributors: Option<String> = match sqlx::query_scalar("SELECT to_regclass($1)::text")
         .bind(DISTRIBUTORS)
         .fetch_one(&mut migrated)
@@ -251,7 +257,6 @@ async fn test_given_empty_postgres_database_when_migrations_run_then_every_scrip
         distributors.is_some(),
         "{DISTRIBUTORS} should have been created by {SECOND_SCRIPT}, and it does not exist"
     );
-    const SCHOOLS: &str = "schools";
     let schools: Option<String> = match sqlx::query_scalar("SELECT to_regclass($1)::text")
         .bind(SCHOOLS)
         .fetch_one(&mut migrated)
@@ -270,6 +275,10 @@ async fn test_given_empty_postgres_database_when_migrations_run_then_every_scrip
 #[cfg(feature = "postgres")]
 #[tokio::test]
 #[traced_test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "each step of the test checks the database before and after the call, so the test reads top to bottom"
+)]
 async fn test_given_postgres_scripts_already_applied_when_migrations_run_again_then_they_are_skipped()
  {
     // What it asserts.
@@ -340,7 +349,7 @@ async fn test_given_postgres_scripts_already_applied_when_migrations_run_again_t
     match try_delete_database_if_exists(DatabaseKind::Postgresql, &migration_configuration).await {
         Ok(value) => value,
         Err(error) => panic!("expected DeleteDatabaseIfExistAsync to succeed: {error:?}"),
-    };
+    }
     let existing_2 = {
         let options = match PgConnectOptions::from_str(&connection_string) {
             Ok(options) => options.database("postgres"),
@@ -368,7 +377,7 @@ async fn test_given_postgres_scripts_already_applied_when_migrations_run_again_t
     eprintln!("[2/{TOTAL}] END deleting the database - passed");
 
     eprintln!("[3/{TOTAL}] BEGIN running the migrations the first time");
-    let first_run_started_at = Utc::now();
+    let first_run_started_at = OffsetDateTime::now_utc();
     match try_apply_migrations(
         DatabaseKind::Postgresql,
         &migration_configuration,
@@ -378,8 +387,8 @@ async fn test_given_postgres_scripts_already_applied_when_migrations_run_again_t
     {
         Ok(value) => value,
         Err(error) => panic!("expected the first migration run to succeed: {error:?}"),
-    };
-    let first_run_finished_at = Utc::now();
+    }
+    let first_run_finished_at = OffsetDateTime::now_utc();
     let rows_after_the_first_run = {
         let options = match PgConnectOptions::from_str(&connection_string) {
             Ok(options) => options.database(&database_name),
@@ -402,11 +411,11 @@ async fn test_given_postgres_scripts_already_applied_when_migrations_run_again_t
             .map(|row| {
                 (
                     row.get::<String, _>("filename"),
-                    row.get::<DateTime<Utc>, _>("executed_at"),
+                    row.get::<OffsetDateTime, _>("executed_at"),
                     row.get::<String, _>("version"),
                 )
             })
-            .collect::<Vec<(String, DateTime<Utc>, String)>>()
+            .collect::<Vec<(String, OffsetDateTime, String)>>()
     };
     let filenames_after_the_first_run: Vec<&str> = rows_after_the_first_run
         .iter()
@@ -429,7 +438,7 @@ async fn test_given_postgres_scripts_already_applied_when_migrations_run_again_t
     {
         Ok(value) => value,
         Err(error) => panic!("expected the second migration run to succeed: {error:?}"),
-    };
+    }
     logs_assert(|lines: &[&str]| {
         const EXPECTED: &str = "setup database executed successfully";
         const LEVEL: &str = " INFO ";
@@ -515,11 +524,11 @@ async fn test_given_postgres_scripts_already_applied_when_migrations_run_again_t
             .map(|row| {
                 (
                     row.get::<String, _>("filename"),
-                    row.get::<DateTime<Utc>, _>("executed_at"),
+                    row.get::<OffsetDateTime, _>("executed_at"),
                     row.get::<String, _>("version"),
                 )
             })
-            .collect::<Vec<(String, DateTime<Utc>, String)>>()
+            .collect::<Vec<(String, OffsetDateTime, String)>>()
     };
     let [first, second] = rows.as_slice() else {
         panic!("expected exactly 2 tracking rows, got {rows:#?}");
@@ -636,6 +645,10 @@ async fn test_given_postgres_scripts_already_applied_when_migrations_run_again_t
 #[cfg(feature = "postgres")]
 #[tokio::test]
 #[traced_test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "each step of the test checks the database before and after the call, so the test reads top to bottom"
+)]
 async fn test_given_cancelled_flag_when_postgres_migrations_run_then_the_run_stops() {
     // What it asserts.
     // A new PostgreSQL container gets a database with a unique name and the
@@ -695,7 +708,7 @@ async fn test_given_cancelled_flag_when_postgres_migrations_run_then_the_run_sto
     match try_delete_database_if_exists(DatabaseKind::Postgresql, &migration_configuration).await {
         Ok(value) => value,
         Err(error) => panic!("expected DeleteDatabaseIfExistAsync to succeed: {error:?}"),
-    };
+    }
     let existing_4 = {
         let options = match PgConnectOptions::from_str(&connection_string) {
             Ok(options) => options.database("postgres"),
@@ -734,7 +747,7 @@ async fn test_given_cancelled_flag_when_postgres_migrations_run_then_the_run_sto
     {
         Ok(value) => value,
         Err(error) => panic!("expected a cancelled run to still report success: {error:?}"),
-    };
+    }
     logs_assert(|lines: &[&str]| {
         const EXPECTED: &str = "migration process was canceled from the outside";
         const LEVEL: &str = " WARN ";
@@ -783,8 +796,14 @@ async fn test_given_cancelled_flag_when_postgres_migrations_run_then_the_run_sto
 #[cfg(feature = "postgres")]
 #[tokio::test]
 #[traced_test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "each step of the test checks the database before and after the call, so the test reads top to bottom"
+)]
 async fn test_given_failing_postgres_script_when_migrations_run_then_failure_is_reported_and_later_scripts_do_not_run()
  {
+    const LEVEL: &str = " ERROR ";
+
     // What it asserts.
     // A new PostgreSQL container gets a database with a unique name and the postgres
     // failure fixture scripts: a good script, a broken script and a later script.
@@ -851,7 +870,7 @@ async fn test_given_failing_postgres_script_when_migrations_run_then_failure_is_
     match try_delete_database_if_exists(DatabaseKind::Postgresql, &migration_configuration).await {
         Ok(value) => value,
         Err(error) => panic!("expected DeleteDatabaseIfExistAsync to succeed: {error:?}"),
-    };
+    }
     let existing_7 = {
         let options = match PgConnectOptions::from_str(&connection_string) {
             Ok(options) => options.database("postgres"),
@@ -879,7 +898,7 @@ async fn test_given_failing_postgres_script_when_migrations_run_then_failure_is_
     eprintln!("[2/{TOTAL}] END deleting the database - passed");
 
     eprintln!("[3/{TOTAL}] BEGIN running the migrations");
-    let before = Utc::now();
+    let before = OffsetDateTime::now_utc();
     let message = match try_apply_migrations(
         DatabaseKind::Postgresql,
         &migration_configuration,
@@ -890,7 +909,7 @@ async fn test_given_failing_postgres_script_when_migrations_run_then_failure_is_
         Ok(()) => panic!("expected the migration run to report failure when a script fails"),
         Err(error_kind) => error_kind.to_string(),
     };
-    let after = Utc::now();
+    let after = OffsetDateTime::now_utc();
     assert_eq!(
         message, RUN_FAILURE,
         "the run should report {}, and it reports {}",
@@ -898,7 +917,6 @@ async fn test_given_failing_postgres_script_when_migrations_run_then_failure_is_
     );
     logs_assert(|lines: &[&str]| {
         let expected: &str = &message;
-        const LEVEL: &str = " ERROR ";
         let matching: Vec<&&str> = lines
             .iter()
             .filter(|line| line.contains(expected))
@@ -966,11 +984,11 @@ async fn test_given_failing_postgres_script_when_migrations_run_then_failure_is_
             .map(|row| {
                 (
                     row.get::<String, _>("filename"),
-                    row.get::<DateTime<Utc>, _>("executed_at"),
+                    row.get::<OffsetDateTime, _>("executed_at"),
                     row.get::<String, _>("version"),
                 )
             })
-            .collect::<Vec<(String, DateTime<Utc>, String)>>()
+            .collect::<Vec<(String, OffsetDateTime, String)>>()
     };
     let [only] = rows.as_slice() else {
         panic!("expected exactly 1 tracking row for the one script that succeeded, got {rows:#?}");
@@ -1029,8 +1047,16 @@ async fn test_given_failing_postgres_script_when_migrations_run_then_failure_is_
 #[cfg(feature = "postgres")]
 #[tokio::test]
 #[traced_test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "each step of the test checks the database before and after the call, so the test reads top to bottom"
+)]
 async fn test_given_postgres_scripts_that_cannot_be_loaded_when_migrations_run_then_failure_is_reported()
  {
+    const LOAD_FAILURE: &str =
+        "One or more scripts could not be loaded, is the sequence patterns correct?";
+    const LEVEL: &str = " ERROR ";
+
     // What it asserts.
     // A new PostgreSQL container gets a database with a unique name and a scripts
     // directory that does not exist. The database does not exist before the
@@ -1092,7 +1118,7 @@ async fn test_given_postgres_scripts_that_cannot_be_loaded_when_migrations_run_t
     match try_delete_database_if_exists(DatabaseKind::Postgresql, &migration_configuration).await {
         Ok(value) => value,
         Err(error) => panic!("expected DeleteDatabaseIfExistAsync to succeed: {error:?}"),
-    };
+    }
     let existing_9 = {
         let options = match PgConnectOptions::from_str(&connection_string) {
             Ok(options) => options.database("postgres"),
@@ -1132,16 +1158,12 @@ async fn test_given_postgres_scripts_that_cannot_be_loaded_when_migrations_run_t
         }
         Err(error_kind) => error_kind.to_string(),
     };
-    const LOAD_FAILURE: &str =
-        "One or more scripts could not be loaded, is the sequence patterns correct?";
     assert_eq!(
         message, LOAD_FAILURE,
-        "the run should report {}, and it reports {}",
-        LOAD_FAILURE, message
+        "the run should report {LOAD_FAILURE}, and it reports {message}"
     );
     logs_assert(|lines: &[&str]| {
         let expected: &str = &message;
-        const LEVEL: &str = " ERROR ";
         let matching: Vec<&&str> = lines
             .iter()
             .filter(|line| line.contains(expected))
@@ -1252,11 +1274,11 @@ async fn test_given_postgres_scripts_that_cannot_be_loaded_when_migrations_run_t
             .map(|row| {
                 (
                     row.get::<String, _>("filename"),
-                    row.get::<DateTime<Utc>, _>("executed_at"),
+                    row.get::<OffsetDateTime, _>("executed_at"),
                     row.get::<String, _>("version"),
                 )
             })
-            .collect::<Vec<(String, DateTime<Utc>, String)>>()
+            .collect::<Vec<(String, OffsetDateTime, String)>>()
     };
     assert!(
         rows.is_empty(),
@@ -1268,8 +1290,14 @@ async fn test_given_postgres_scripts_that_cannot_be_loaded_when_migrations_run_t
 #[cfg(feature = "postgres")]
 #[tokio::test]
 #[traced_test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "each step of the test checks the database before and after the call, so the test reads top to bottom"
+)]
 async fn test_given_postgres_database_refuses_connections_when_migrations_run_then_tracking_table_failure_is_reported()
  {
+    const LEVEL: &str = " ERROR ";
+
     // What it asserts.
     // A new PostgreSQL container gets a database with a unique name and the
     // postgres fixture scripts. The database is created up front and set to refuse
@@ -1381,7 +1409,6 @@ async fn test_given_postgres_database_refuses_connections_when_migrations_run_th
     );
     logs_assert(|lines: &[&str]| {
         let expected: &str = &message;
-        const LEVEL: &str = " ERROR ";
         let matching: Vec<&&str> = lines
             .iter()
             .filter(|line| line.contains(expected))
@@ -1581,7 +1608,7 @@ async fn test_given_no_postgres_database_when_delete_runs_then_nothing_changes()
         Err(error) => {
             panic!("expected deleting a database that does not exist to be a no-op: {error:?}")
         }
-    };
+    }
     logs_assert(|lines: &[&str]| {
         const EXPECTED: &str = "DeleteDatabaseIfExistAsync has executed";
         const LEVEL: &str = " INFO ";
@@ -1634,6 +1661,10 @@ async fn test_given_no_postgres_database_when_delete_runs_then_nothing_changes()
 #[cfg(feature = "postgres")]
 #[tokio::test]
 #[traced_test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "each step of the test checks the database before and after the call, so the test reads top to bottom"
+)]
 async fn test_given_postgres_database_with_data_when_migrations_run_then_its_data_is_kept() {
     // What it asserts.
     // A new PostgreSQL container gets a database with a unique name, created up
@@ -1760,7 +1791,7 @@ async fn test_given_postgres_database_with_data_when_migrations_run_then_its_dat
         Err(error) => panic!(
             "expected the migration run to succeed against an already existing database: {error:?}"
         ),
-    };
+    }
     logs_assert(|lines: &[&str]| {
         const EXPECTED: &str = "setup database executed successfully";
         const LEVEL: &str = " INFO ";
@@ -1843,11 +1874,11 @@ async fn test_given_postgres_database_with_data_when_migrations_run_then_its_dat
             .map(|row| {
                 (
                     row.get::<String, _>("filename"),
-                    row.get::<DateTime<Utc>, _>("executed_at"),
+                    row.get::<OffsetDateTime, _>("executed_at"),
                     row.get::<String, _>("version"),
                 )
             })
-            .collect::<Vec<(String, DateTime<Utc>, String)>>()
+            .collect::<Vec<(String, OffsetDateTime, String)>>()
     };
     let filenames: Vec<&str> = rows
         .iter()
@@ -1868,6 +1899,10 @@ async fn test_given_postgres_database_with_data_when_migrations_run_then_its_dat
 #[cfg(feature = "postgres")]
 #[tokio::test]
 #[traced_test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "each step of the test checks the database before and after the call, so the test reads top to bottom"
+)]
 async fn test_given_postgres_connection_string_with_a_database_and_a_query_when_migrations_run_then_every_script_is_applied()
  {
     // What it asserts.
@@ -1933,7 +1968,7 @@ async fn test_given_postgres_connection_string_with_a_database_and_a_query_when_
         Err(error) => panic!(
             "expected the delete to succeed with a database and a query in the connection string: {error:?}"
         ),
-    };
+    }
     let existing_16 = {
         let options = match PgConnectOptions::from_str(&connection_string) {
             Ok(options) => options.database("postgres"),
@@ -1972,7 +2007,7 @@ async fn test_given_postgres_connection_string_with_a_database_and_a_query_when_
         Err(error) => panic!(
             "expected the migration run to succeed with a database and a query in the connection string: {error:?}"
         ),
-    };
+    }
     logs_assert(|lines: &[&str]| {
         const EXPECTED: &str = "migration process executed successfully";
         const LEVEL: &str = " INFO ";
@@ -2013,11 +2048,11 @@ async fn test_given_postgres_connection_string_with_a_database_and_a_query_when_
             .map(|row| {
                 (
                     row.get::<String, _>("filename"),
-                    row.get::<DateTime<Utc>, _>("executed_at"),
+                    row.get::<OffsetDateTime, _>("executed_at"),
                     row.get::<String, _>("version"),
                 )
             })
-            .collect::<Vec<(String, DateTime<Utc>, String)>>()
+            .collect::<Vec<(String, OffsetDateTime, String)>>()
     };
     let filenames: Vec<&str> = rows
         .iter()
@@ -2036,6 +2071,8 @@ async fn test_given_postgres_connection_string_with_a_database_and_a_query_when_
 #[traced_test]
 async fn test_given_postgres_server_that_does_not_answer_when_delete_runs_then_failure_is_reported()
 {
+    const LEVEL: &str = " ERROR ";
+
     // What it asserts.
     // No server answers on 127.0.0.1 port 1 before the delete. The
     // connection string points at that port. The delete fails with
@@ -2077,7 +2114,6 @@ async fn test_given_postgres_server_that_does_not_answer_when_delete_runs_then_f
     );
     logs_assert(|lines: &[&str]| {
         let expected: &str = &message;
-        const LEVEL: &str = " ERROR ";
         let matching: Vec<&&str> = lines
             .iter()
             .filter(|line| line.contains(expected))
@@ -2102,6 +2138,8 @@ async fn test_given_postgres_server_that_does_not_answer_when_delete_runs_then_f
 #[traced_test]
 async fn test_given_postgres_server_that_does_not_answer_when_migrations_run_then_setup_failure_is_reported()
  {
+    const LEVEL: &str = " ERROR ";
+
     // What it asserts.
     // No server answers on 127.0.0.1 port 1 before the run. The connection
     // string points at that port. The migrations run. The run fails with
@@ -2147,7 +2185,6 @@ async fn test_given_postgres_server_that_does_not_answer_when_migrations_run_the
     );
     logs_assert(|lines: &[&str]| {
         let expected: &str = &message;
-        const LEVEL: &str = " ERROR ";
         let matching: Vec<&&str> = lines
             .iter()
             .filter(|line| line.contains(expected))
@@ -2186,6 +2223,10 @@ async fn test_given_postgres_server_that_does_not_answer_when_migrations_run_the
 #[cfg(feature = "postgres")]
 #[tokio::test]
 #[traced_test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "each step of the test checks the database before and after the call, so the test reads top to bottom"
+)]
 async fn test_given_postgres_scripts_directory_with_a_folder_when_migrations_run_then_the_folder_is_skipped()
  {
     // What it asserts.
@@ -2253,7 +2294,7 @@ async fn test_given_postgres_scripts_directory_with_a_folder_when_migrations_run
     {
         Ok(value) => value,
         Err(error) => panic!("expected the run to succeed and skip the folder: {error:?}"),
-    };
+    }
     logs_assert(|lines: &[&str]| {
         const EXPECTED: &str = "migration process executed successfully";
         const LEVEL: &str = " INFO ";
@@ -2294,11 +2335,11 @@ async fn test_given_postgres_scripts_directory_with_a_folder_when_migrations_run
             .map(|row| {
                 (
                     row.get::<String, _>("filename"),
-                    row.get::<DateTime<Utc>, _>("executed_at"),
+                    row.get::<OffsetDateTime, _>("executed_at"),
                     row.get::<String, _>("version"),
                 )
             })
-            .collect::<Vec<(String, DateTime<Utc>, String)>>()
+            .collect::<Vec<(String, OffsetDateTime, String)>>()
     };
     let filenames: Vec<&str> = rows
         .iter()
@@ -2338,6 +2379,10 @@ async fn test_given_postgres_scripts_directory_with_a_folder_when_migrations_run
 #[cfg(feature = "postgres")]
 #[tokio::test]
 #[traced_test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "each step of the test checks the database before and after the call, so the test reads top to bottom"
+)]
 async fn test_given_slow_first_postgres_script_when_the_run_is_cancelled_during_it_then_later_scripts_do_not_run()
  {
     // What it asserts.
@@ -2443,7 +2488,7 @@ async fn test_given_slow_first_postgres_script_when_the_run_is_cancelled_during_
         Err(error) => {
             panic!("expected a run cancelled between scripts to report success: {error:?}")
         }
-    };
+    }
     logs_assert(|lines: &[&str]| {
         const EXPECTED: &str = "migration process was canceled";
         const LEVEL: &str = " WARN ";
@@ -2490,11 +2535,11 @@ async fn test_given_slow_first_postgres_script_when_the_run_is_cancelled_during_
             .map(|row| {
                 (
                     row.get::<String, _>("filename"),
-                    row.get::<DateTime<Utc>, _>("executed_at"),
+                    row.get::<OffsetDateTime, _>("executed_at"),
                     row.get::<String, _>("version"),
                 )
             })
-            .collect::<Vec<(String, DateTime<Utc>, String)>>()
+            .collect::<Vec<(String, OffsetDateTime, String)>>()
     };
     let filenames: Vec<&str> = rows
         .iter()
@@ -2560,8 +2605,16 @@ async fn test_given_slow_first_postgres_script_when_the_run_is_cancelled_during_
 #[cfg(feature = "postgres")]
 #[tokio::test]
 #[traced_test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "each step of the test checks the database before and after the call, so the test reads top to bottom"
+)]
 async fn test_given_postgres_script_that_is_not_utf8_when_migrations_run_then_failure_is_reported()
 {
+    const LOAD_FAILURE: &str =
+        "One or more scripts could not be loaded, is the sequence patterns correct?";
+    const LEVEL: &str = " ERROR ";
+
     // What it asserts.
     // A new PostgreSQL container gets a database with a unique name and a
     // scripts directory whose one script holds the Latin-1 byte 0xE9. The
@@ -2628,16 +2681,12 @@ async fn test_given_postgres_script_that_is_not_utf8_when_migrations_run_then_fa
         Ok(()) => panic!("expected the run to fail when a script is not UTF-8"),
         Err(error_kind) => error_kind.to_string(),
     };
-    const LOAD_FAILURE: &str =
-        "One or more scripts could not be loaded, is the sequence patterns correct?";
     assert_eq!(
         message, LOAD_FAILURE,
-        "the run should report {}, and it reports {}",
-        LOAD_FAILURE, message
+        "the run should report {LOAD_FAILURE}, and it reports {message}"
     );
     logs_assert(|lines: &[&str]| {
         let expected: &str = &message;
-        const LEVEL: &str = " ERROR ";
         let matching: Vec<&&str> = lines
             .iter()
             .filter(|line| line.contains(expected))
@@ -2679,11 +2728,11 @@ async fn test_given_postgres_script_that_is_not_utf8_when_migrations_run_then_fa
             .map(|row| {
                 (
                     row.get::<String, _>("filename"),
-                    row.get::<DateTime<Utc>, _>("executed_at"),
+                    row.get::<OffsetDateTime, _>("executed_at"),
                     row.get::<String, _>("version"),
                 )
             })
-            .collect::<Vec<(String, DateTime<Utc>, String)>>()
+            .collect::<Vec<(String, OffsetDateTime, String)>>()
     };
     assert!(rows.is_empty(), "expected no tracking rows, got {rows:#?}");
     eprintln!("[3/{TOTAL}] END reading the tracking table - passed");
@@ -2692,6 +2741,10 @@ async fn test_given_postgres_script_that_is_not_utf8_when_migrations_run_then_fa
 #[cfg(feature = "mssql")]
 #[tokio::test]
 #[traced_test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "each step of the test checks the database before and after the call, so the test reads top to bottom"
+)]
 async fn test_given_empty_mssql_database_when_migrations_run_then_every_script_is_applied_and_tracked()
  {
     // What it asserts.
@@ -2766,7 +2819,7 @@ async fn test_given_empty_mssql_database_when_migrations_run_then_every_script_i
     match try_delete_database_if_exists(DatabaseKind::Mssql, &migration_configuration).await {
         Ok(value) => value,
         Err(error) => panic!("expected DeleteDatabaseIfExistAsync to succeed: {error:?}"),
-    };
+    }
     logs_assert(|lines: &[&str]| {
         const EXPECTED: &str = "DeleteDatabaseIfExistAsync has executed";
         const LEVEL: &str = " INFO ";
@@ -2814,7 +2867,7 @@ async fn test_given_empty_mssql_database_when_migrations_run_then_every_script_i
     eprintln!("[2/{TOTAL}] END deleting the database - passed");
 
     eprintln!("[3/{TOTAL}] BEGIN running the migrations");
-    let before = Utc::now();
+    let before = OffsetDateTime::now_utc();
     match try_apply_migrations(
         DatabaseKind::Mssql,
         &migration_configuration,
@@ -2824,8 +2877,8 @@ async fn test_given_empty_mssql_database_when_migrations_run_then_every_script_i
     {
         Ok(value) => value,
         Err(error) => panic!("expected the migration run to succeed: {error:?}"),
-    };
-    let after = Utc::now();
+    }
+    let after = OffsetDateTime::now_utc();
     logs_assert(|lines: &[&str]| {
         const EXPECTED: &str = "setup database executed successfully";
         const LEVEL: &str = " INFO ";
@@ -2933,17 +2986,14 @@ async fn test_given_empty_mssql_database_when_migrations_run_then_every_script_i
         };
         let mut tracking_rows = Vec::with_capacity(rows.len());
         for row in rows {
-            let filename: &str = match row.get("Filename") {
-                Some(filename) => filename,
-                None => panic!("every tracking row should carry a Filename, and one does not"),
+            let Some(filename) = row.get::<&str, _>("Filename") else {
+                panic!("every tracking row should carry a Filename, and one does not");
             };
-            let executed_at: DateTime<Utc> = match row.get("ExecutedAt") {
-                Some(executed_at) => executed_at,
-                None => panic!("every tracking row should carry an ExecutedAt, and one does not"),
+            let Some(executed_at) = row.get::<OffsetDateTime, _>("ExecutedAt") else {
+                panic!("every tracking row should carry an ExecutedAt, and one does not");
             };
-            let version: &str = match row.get("Version") {
-                Some(version) => version,
-                None => panic!("every tracking row should carry a Version, and one does not"),
+            let Some(version) = row.get::<&str, _>("Version") else {
+                panic!("every tracking row should carry a Version, and one does not");
             };
             tracking_rows.push((filename.to_string(), executed_at, version.to_string()));
         }
@@ -3081,6 +3131,10 @@ async fn test_given_empty_mssql_database_when_migrations_run_then_every_script_i
 #[cfg(feature = "mssql")]
 #[tokio::test]
 #[traced_test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "each step of the test checks the database before and after the call, so the test reads top to bottom"
+)]
 async fn test_given_mssql_scripts_already_applied_when_migrations_run_again_then_they_are_skipped()
 {
     // What it asserts.
@@ -3156,7 +3210,7 @@ async fn test_given_mssql_scripts_already_applied_when_migrations_run_again_then
     match try_delete_database_if_exists(DatabaseKind::Mssql, &migration_configuration).await {
         Ok(value) => value,
         Err(error) => panic!("expected DeleteDatabaseIfExistAsync to succeed: {error:?}"),
-    };
+    }
     let existing_23 = {
         let config = match Config::from_ado_string(&connection_string) {
             Ok(config) => config,
@@ -3189,7 +3243,7 @@ async fn test_given_mssql_scripts_already_applied_when_migrations_run_again_then
     eprintln!("[2/{TOTAL}] END deleting the database - passed");
 
     eprintln!("[3/{TOTAL}] BEGIN running the migrations the first time");
-    let first_run_started_at = Utc::now();
+    let first_run_started_at = OffsetDateTime::now_utc();
     match try_apply_migrations(
         DatabaseKind::Mssql,
         &migration_configuration,
@@ -3199,8 +3253,8 @@ async fn test_given_mssql_scripts_already_applied_when_migrations_run_again_then
     {
         Ok(value) => value,
         Err(error) => panic!("expected the first migration run to succeed: {error:?}"),
-    };
-    let first_run_finished_at = Utc::now();
+    }
+    let first_run_finished_at = OffsetDateTime::now_utc();
     let rows_after_the_first_run = {
         let mut config = match Config::from_ado_string(&connection_string) {
             Ok(config) => config,
@@ -3230,17 +3284,14 @@ async fn test_given_mssql_scripts_already_applied_when_migrations_run_again_then
         };
         let mut tracking_rows = Vec::with_capacity(rows.len());
         for row in rows {
-            let filename: &str = match row.get("Filename") {
-                Some(filename) => filename,
-                None => panic!("every tracking row should carry a Filename, and one does not"),
+            let Some(filename) = row.get::<&str, _>("Filename") else {
+                panic!("every tracking row should carry a Filename, and one does not");
             };
-            let executed_at: DateTime<Utc> = match row.get("ExecutedAt") {
-                Some(executed_at) => executed_at,
-                None => panic!("every tracking row should carry an ExecutedAt, and one does not"),
+            let Some(executed_at) = row.get::<OffsetDateTime, _>("ExecutedAt") else {
+                panic!("every tracking row should carry an ExecutedAt, and one does not");
             };
-            let version: &str = match row.get("Version") {
-                Some(version) => version,
-                None => panic!("every tracking row should carry a Version, and one does not"),
+            let Some(version) = row.get::<&str, _>("Version") else {
+                panic!("every tracking row should carry a Version, and one does not");
             };
             tracking_rows.push((filename.to_string(), executed_at, version.to_string()));
         }
@@ -3267,7 +3318,7 @@ async fn test_given_mssql_scripts_already_applied_when_migrations_run_again_then
     {
         Ok(value) => value,
         Err(error) => panic!("expected the second migration run to succeed: {error:?}"),
-    };
+    }
     logs_assert(|lines: &[&str]| {
         const EXPECTED: &str = "setup database executed successfully";
         const LEVEL: &str = " INFO ";
@@ -3360,17 +3411,14 @@ async fn test_given_mssql_scripts_already_applied_when_migrations_run_again_then
         };
         let mut tracking_rows = Vec::with_capacity(rows.len());
         for row in rows {
-            let filename: &str = match row.get("Filename") {
-                Some(filename) => filename,
-                None => panic!("every tracking row should carry a Filename, and one does not"),
+            let Some(filename) = row.get::<&str, _>("Filename") else {
+                panic!("every tracking row should carry a Filename, and one does not");
             };
-            let executed_at: DateTime<Utc> = match row.get("ExecutedAt") {
-                Some(executed_at) => executed_at,
-                None => panic!("every tracking row should carry an ExecutedAt, and one does not"),
+            let Some(executed_at) = row.get::<OffsetDateTime, _>("ExecutedAt") else {
+                panic!("every tracking row should carry an ExecutedAt, and one does not");
             };
-            let version: &str = match row.get("Version") {
-                Some(version) => version,
-                None => panic!("every tracking row should carry a Version, and one does not"),
+            let Some(version) = row.get::<&str, _>("Version") else {
+                panic!("every tracking row should carry a Version, and one does not");
             };
             tracking_rows.push((filename.to_string(), executed_at, version.to_string()));
         }
@@ -3512,6 +3560,10 @@ async fn test_given_mssql_scripts_already_applied_when_migrations_run_again_then
 #[cfg(feature = "mssql")]
 #[tokio::test]
 #[traced_test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "each step of the test checks the database before and after the call, so the test reads top to bottom"
+)]
 async fn test_given_cancelled_flag_when_mssql_migrations_run_then_the_run_stops() {
     // What it asserts.
     // A new SQL Server container gets a database with a unique name and the mssql
@@ -3576,7 +3628,7 @@ async fn test_given_cancelled_flag_when_mssql_migrations_run_then_the_run_stops(
     match try_delete_database_if_exists(DatabaseKind::Mssql, &migration_configuration).await {
         Ok(value) => value,
         Err(error) => panic!("expected DeleteDatabaseIfExistAsync to succeed: {error:?}"),
-    };
+    }
     let existing_25 = {
         let config = match Config::from_ado_string(&connection_string) {
             Ok(config) => config,
@@ -3614,7 +3666,7 @@ async fn test_given_cancelled_flag_when_mssql_migrations_run_then_the_run_stops(
     match try_apply_migrations(DatabaseKind::Mssql, &migration_configuration, &is_cancelled).await {
         Ok(value) => value,
         Err(error) => panic!("expected a cancelled run to still report success: {error:?}"),
-    };
+    }
     logs_assert(|lines: &[&str]| {
         const EXPECTED: &str = "migration process was canceled from the outside";
         const LEVEL: &str = " WARN ";
@@ -3668,8 +3720,14 @@ async fn test_given_cancelled_flag_when_mssql_migrations_run_then_the_run_stops(
 #[cfg(feature = "mssql")]
 #[tokio::test]
 #[traced_test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "each step of the test checks the database before and after the call, so the test reads top to bottom"
+)]
 async fn test_given_failing_mssql_script_when_migrations_run_then_failure_is_reported_and_later_scripts_do_not_run()
  {
+    const LEVEL: &str = " ERROR ";
+
     // What it asserts.
     // A new SQL Server container gets a database with a unique name and the mssql
     // failure fixture scripts: a good script, a broken script and a later script.
@@ -3741,7 +3799,7 @@ async fn test_given_failing_mssql_script_when_migrations_run_then_failure_is_rep
     match try_delete_database_if_exists(DatabaseKind::Mssql, &migration_configuration).await {
         Ok(value) => value,
         Err(error) => panic!("expected DeleteDatabaseIfExistAsync to succeed: {error:?}"),
-    };
+    }
     let existing_28 = {
         let config = match Config::from_ado_string(&connection_string) {
             Ok(config) => config,
@@ -3774,7 +3832,7 @@ async fn test_given_failing_mssql_script_when_migrations_run_then_failure_is_rep
     eprintln!("[2/{TOTAL}] END deleting the database - passed");
 
     eprintln!("[3/{TOTAL}] BEGIN running the migrations");
-    let before = Utc::now();
+    let before = OffsetDateTime::now_utc();
     let message = match try_apply_migrations(
         DatabaseKind::Mssql,
         &migration_configuration,
@@ -3785,7 +3843,7 @@ async fn test_given_failing_mssql_script_when_migrations_run_then_failure_is_rep
         Ok(()) => panic!("expected the migration run to report failure when a script fails"),
         Err(error_kind) => error_kind.to_string(),
     };
-    let after = Utc::now();
+    let after = OffsetDateTime::now_utc();
     assert_eq!(
         message, RUN_FAILURE,
         "the run should report {}, and it reports {}",
@@ -3793,7 +3851,6 @@ async fn test_given_failing_mssql_script_when_migrations_run_then_failure_is_rep
     );
     logs_assert(|lines: &[&str]| {
         let expected: &str = &message;
-        const LEVEL: &str = " ERROR ";
         let matching: Vec<&&str> = lines
             .iter()
             .filter(|line| line.contains(expected))
@@ -3868,17 +3925,14 @@ async fn test_given_failing_mssql_script_when_migrations_run_then_failure_is_rep
         };
         let mut tracking_rows = Vec::with_capacity(rows.len());
         for row in rows {
-            let filename: &str = match row.get("Filename") {
-                Some(filename) => filename,
-                None => panic!("every tracking row should carry a Filename, and one does not"),
+            let Some(filename) = row.get::<&str, _>("Filename") else {
+                panic!("every tracking row should carry a Filename, and one does not");
             };
-            let executed_at: DateTime<Utc> = match row.get("ExecutedAt") {
-                Some(executed_at) => executed_at,
-                None => panic!("every tracking row should carry an ExecutedAt, and one does not"),
+            let Some(executed_at) = row.get::<OffsetDateTime, _>("ExecutedAt") else {
+                panic!("every tracking row should carry an ExecutedAt, and one does not");
             };
-            let version: &str = match row.get("Version") {
-                Some(version) => version,
-                None => panic!("every tracking row should carry a Version, and one does not"),
+            let Some(version) = row.get::<&str, _>("Version") else {
+                panic!("every tracking row should carry a Version, and one does not");
             };
             tracking_rows.push((filename.to_string(), executed_at, version.to_string()));
         }
@@ -3937,9 +3991,8 @@ async fn test_given_failing_mssql_script_when_migrations_run_then_failure_is_rep
         };
         let mut names = Vec::with_capacity(rows.len());
         for row in rows {
-            let name: &str = match row.get("name") {
-                Some(name) => name,
-                None => panic!("every row should carry a name, and one does not"),
+            let Some(name) = row.get::<&str, _>("name") else {
+                panic!("every row should carry a name, and one does not");
             };
             names.push(name.to_string());
         }
@@ -3956,8 +4009,16 @@ async fn test_given_failing_mssql_script_when_migrations_run_then_failure_is_rep
 #[cfg(feature = "mssql")]
 #[tokio::test]
 #[traced_test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "each step of the test checks the database before and after the call, so the test reads top to bottom"
+)]
 async fn test_given_mssql_scripts_that_cannot_be_loaded_when_migrations_run_then_failure_is_reported()
  {
+    const LOAD_FAILURE: &str =
+        "One or more scripts could not be loaded, is the sequence patterns correct?";
+    const LEVEL: &str = " ERROR ";
+
     // What it asserts.
     // A new SQL Server container gets a database with a unique name and a scripts
     // directory that does not exist. The database does not exist before the
@@ -4024,7 +4085,7 @@ async fn test_given_mssql_scripts_that_cannot_be_loaded_when_migrations_run_then
     match try_delete_database_if_exists(DatabaseKind::Mssql, &migration_configuration).await {
         Ok(value) => value,
         Err(error) => panic!("expected DeleteDatabaseIfExistAsync to succeed: {error:?}"),
-    };
+    }
     let existing_30 = {
         let config = match Config::from_ado_string(&connection_string) {
             Ok(config) => config,
@@ -4069,16 +4130,12 @@ async fn test_given_mssql_scripts_that_cannot_be_loaded_when_migrations_run_then
         }
         Err(error_kind) => error_kind.to_string(),
     };
-    const LOAD_FAILURE: &str =
-        "One or more scripts could not be loaded, is the sequence patterns correct?";
     assert_eq!(
         message, LOAD_FAILURE,
-        "the run should report {}, and it reports {}",
-        LOAD_FAILURE, message
+        "the run should report {LOAD_FAILURE}, and it reports {message}"
     );
     logs_assert(|lines: &[&str]| {
         let expected: &str = &message;
-        const LEVEL: &str = " ERROR ";
         let matching: Vec<&&str> = lines
             .iter()
             .filter(|line| line.contains(expected))
@@ -4171,9 +4228,8 @@ async fn test_given_mssql_scripts_that_cannot_be_loaded_when_migrations_run_then
         };
         let mut names = Vec::with_capacity(rows.len());
         for row in rows {
-            let name: &str = match row.get("name") {
-                Some(name) => name,
-                None => panic!("every row should carry a name, and one does not"),
+            let Some(name) = row.get::<&str, _>("name") else {
+                panic!("every row should carry a name, and one does not");
             };
             names.push(name.to_string());
         }
@@ -4216,17 +4272,14 @@ async fn test_given_mssql_scripts_that_cannot_be_loaded_when_migrations_run_then
         };
         let mut tracking_rows = Vec::with_capacity(rows.len());
         for row in rows {
-            let filename: &str = match row.get("Filename") {
-                Some(filename) => filename,
-                None => panic!("every tracking row should carry a Filename, and one does not"),
+            let Some(filename) = row.get::<&str, _>("Filename") else {
+                panic!("every tracking row should carry a Filename, and one does not");
             };
-            let executed_at: DateTime<Utc> = match row.get("ExecutedAt") {
-                Some(executed_at) => executed_at,
-                None => panic!("every tracking row should carry an ExecutedAt, and one does not"),
+            let Some(executed_at) = row.get::<OffsetDateTime, _>("ExecutedAt") else {
+                panic!("every tracking row should carry an ExecutedAt, and one does not");
             };
-            let version: &str = match row.get("Version") {
-                Some(version) => version,
-                None => panic!("every tracking row should carry a Version, and one does not"),
+            let Some(version) = row.get::<&str, _>("Version") else {
+                panic!("every tracking row should carry a Version, and one does not");
             };
             tracking_rows.push((filename.to_string(), executed_at, version.to_string()));
         }
@@ -4242,8 +4295,14 @@ async fn test_given_mssql_scripts_that_cannot_be_loaded_when_migrations_run_then
 #[cfg(feature = "mssql")]
 #[tokio::test]
 #[traced_test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "each step of the test checks the database before and after the call, so the test reads top to bottom"
+)]
 async fn test_given_mssql_database_is_offline_when_migrations_run_then_tracking_table_failure_is_reported()
  {
+    const LEVEL: &str = " ERROR ";
+
     // What it asserts.
     // A new SQL Server container gets a database with a unique name and the mssql
     // fixture scripts. The database is created up front and set offline. Before
@@ -4363,7 +4422,6 @@ async fn test_given_mssql_database_is_offline_when_migrations_run_then_tracking_
     );
     logs_assert(|lines: &[&str]| {
         let expected: &str = &message;
-        const LEVEL: &str = " ERROR ";
         let matching: Vec<&&str> = lines
             .iter()
             .filter(|line| line.contains(expected))
@@ -4510,9 +4568,8 @@ async fn test_given_mssql_database_is_offline_when_migrations_run_then_tracking_
         };
         let mut names = Vec::with_capacity(rows.len());
         for row in rows {
-            let name: &str = match row.get("name") {
-                Some(name) => name,
-                None => panic!("every row should carry a name, and one does not"),
+            let Some(name) = row.get::<&str, _>("name") else {
+                panic!("every row should carry a name, and one does not");
             };
             names.push(name.to_string());
         }
@@ -4528,6 +4585,10 @@ async fn test_given_mssql_database_is_offline_when_migrations_run_then_tracking_
 #[cfg(feature = "mssql")]
 #[tokio::test]
 #[traced_test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "each step of the test checks the database before and after the call, so the test reads top to bottom"
+)]
 async fn test_given_no_mssql_database_when_delete_runs_then_nothing_changes() {
     // What it asserts.
     // A new SQL Server container gets a database name that no database has. The
@@ -4594,7 +4655,7 @@ async fn test_given_no_mssql_database_when_delete_runs_then_nothing_changes() {
         Err(error) => {
             panic!("expected deleting a database that does not exist to be a no-op: {error:?}")
         }
-    };
+    }
     logs_assert(|lines: &[&str]| {
         const EXPECTED: &str = "DeleteDatabaseIfExistAsync has executed";
         const LEVEL: &str = " INFO ";
@@ -4652,6 +4713,10 @@ async fn test_given_no_mssql_database_when_delete_runs_then_nothing_changes() {
 #[cfg(feature = "mssql")]
 #[tokio::test]
 #[traced_test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "each step of the test checks the database before and after the call, so the test reads top to bottom"
+)]
 async fn test_given_mssql_database_with_data_when_migrations_run_then_its_data_is_kept() {
     // What it asserts.
     // A new SQL Server container gets a database with a unique name, created up
@@ -4797,7 +4862,7 @@ async fn test_given_mssql_database_with_data_when_migrations_run_then_its_data_i
         Err(error) => panic!(
             "expected the migration run to succeed against an already existing database: {error:?}"
         ),
-    };
+    }
     logs_assert(|lines: &[&str]| {
         const EXPECTED: &str = "setup database executed successfully";
         const LEVEL: &str = " INFO ";
@@ -4894,17 +4959,14 @@ async fn test_given_mssql_database_with_data_when_migrations_run_then_its_data_i
         };
         let mut tracking_rows = Vec::with_capacity(rows.len());
         for row in rows {
-            let filename: &str = match row.get("Filename") {
-                Some(filename) => filename,
-                None => panic!("every tracking row should carry a Filename, and one does not"),
+            let Some(filename) = row.get::<&str, _>("Filename") else {
+                panic!("every tracking row should carry a Filename, and one does not");
             };
-            let executed_at: DateTime<Utc> = match row.get("ExecutedAt") {
-                Some(executed_at) => executed_at,
-                None => panic!("every tracking row should carry an ExecutedAt, and one does not"),
+            let Some(executed_at) = row.get::<OffsetDateTime, _>("ExecutedAt") else {
+                panic!("every tracking row should carry an ExecutedAt, and one does not");
             };
-            let version: &str = match row.get("Version") {
-                Some(version) => version,
-                None => panic!("every tracking row should carry a Version, and one does not"),
+            let Some(version) = row.get::<&str, _>("Version") else {
+                panic!("every tracking row should carry a Version, and one does not");
             };
             tracking_rows.push((filename.to_string(), executed_at, version.to_string()));
         }
@@ -4929,6 +4991,10 @@ async fn test_given_mssql_database_with_data_when_migrations_run_then_its_data_i
 #[cfg(feature = "mssql")]
 #[tokio::test]
 #[traced_test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "each step of the test checks the database before and after the call, so the test reads top to bottom"
+)]
 async fn test_given_mssql_database_name_with_a_quote_and_a_bracket_when_migrations_run_then_every_script_is_applied()
  {
     // What it asserts.
@@ -5000,7 +5066,7 @@ async fn test_given_mssql_database_name_with_a_quote_and_a_bracket_when_migratio
         Err(error) => panic!(
             "expected the delete to succeed for a name with a quote and a bracket: {error:?}"
         ),
-    };
+    }
     let existing_37 = {
         let config = match Config::from_ado_string(&connection_string) {
             Ok(config) => config,
@@ -5044,7 +5110,7 @@ async fn test_given_mssql_database_name_with_a_quote_and_a_bracket_when_migratio
         Err(error) => panic!(
             "expected the migration run to succeed for a name with a quote and a bracket: {error:?}"
         ),
-    };
+    }
     logs_assert(|lines: &[&str]| {
         const EXPECTED: &str = "migration process executed successfully";
         const LEVEL: &str = " INFO ";
@@ -5118,17 +5184,14 @@ async fn test_given_mssql_database_name_with_a_quote_and_a_bracket_when_migratio
         };
         let mut tracking_rows = Vec::with_capacity(rows.len());
         for row in rows {
-            let filename: &str = match row.get("Filename") {
-                Some(filename) => filename,
-                None => panic!("every tracking row should carry a Filename, and one does not"),
+            let Some(filename) = row.get::<&str, _>("Filename") else {
+                panic!("every tracking row should carry a Filename, and one does not");
             };
-            let executed_at: DateTime<Utc> = match row.get("ExecutedAt") {
-                Some(executed_at) => executed_at,
-                None => panic!("every tracking row should carry an ExecutedAt, and one does not"),
+            let Some(executed_at) = row.get::<OffsetDateTime, _>("ExecutedAt") else {
+                panic!("every tracking row should carry an ExecutedAt, and one does not");
             };
-            let version: &str = match row.get("Version") {
-                Some(version) => version,
-                None => panic!("every tracking row should carry a Version, and one does not"),
+            let Some(version) = row.get::<&str, _>("Version") else {
+                panic!("every tracking row should carry a Version, and one does not");
             };
             tracking_rows.push((filename.to_string(), executed_at, version.to_string()));
         }
@@ -5149,7 +5212,7 @@ async fn test_given_mssql_database_name_with_a_quote_and_a_bracket_when_migratio
     match try_delete_database_if_exists(DatabaseKind::Mssql, &migration_configuration).await {
         Ok(value) => value,
         Err(error) => panic!("expected the second delete to succeed: {error:?}"),
-    };
+    }
     let existing_39 = {
         let config = match Config::from_ado_string(&connection_string) {
             Ok(config) => config,
@@ -5185,6 +5248,10 @@ async fn test_given_mssql_database_name_with_a_quote_and_a_bracket_when_migratio
 #[cfg(feature = "mssql")]
 #[tokio::test]
 #[traced_test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "each step of the test checks the database before and after the call, so the test reads top to bottom"
+)]
 async fn test_given_slow_first_mssql_script_when_the_run_is_cancelled_during_it_then_later_scripts_do_not_run()
  {
     // What it asserts.
@@ -5303,7 +5370,7 @@ async fn test_given_slow_first_mssql_script_when_the_run_is_cancelled_during_it_
         Err(error) => {
             panic!("expected a run cancelled between scripts to report success: {error:?}")
         }
-    };
+    }
     logs_assert(|lines: &[&str]| {
         const EXPECTED: &str = "migration process was canceled";
         const LEVEL: &str = " WARN ";
@@ -5357,17 +5424,14 @@ async fn test_given_slow_first_mssql_script_when_the_run_is_cancelled_during_it_
         };
         let mut tracking_rows = Vec::with_capacity(rows.len());
         for row in rows {
-            let filename: &str = match row.get("Filename") {
-                Some(filename) => filename,
-                None => panic!("every tracking row should carry a Filename, and one does not"),
+            let Some(filename) = row.get::<&str, _>("Filename") else {
+                panic!("every tracking row should carry a Filename, and one does not");
             };
-            let executed_at: DateTime<Utc> = match row.get("ExecutedAt") {
-                Some(executed_at) => executed_at,
-                None => panic!("every tracking row should carry an ExecutedAt, and one does not"),
+            let Some(executed_at) = row.get::<OffsetDateTime, _>("ExecutedAt") else {
+                panic!("every tracking row should carry an ExecutedAt, and one does not");
             };
-            let version: &str = match row.get("Version") {
-                Some(version) => version,
-                None => panic!("every tracking row should carry a Version, and one does not"),
+            let Some(version) = row.get::<&str, _>("Version") else {
+                panic!("every tracking row should carry a Version, and one does not");
             };
             tracking_rows.push((filename.to_string(), executed_at, version.to_string()));
         }

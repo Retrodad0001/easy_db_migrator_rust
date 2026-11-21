@@ -12,11 +12,12 @@ use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
 use super::{expect_ok, sweep_leftover_containers};
 
 pub(crate) async fn start_the_container() -> (ContainerAsync<GenericImage>, String) {
+    const SA_PASSWORD: &str = "yourStrong(!)Password";
+
     const TEST_LABEL: &str = "easy_db_migrator_rust_mssql_test";
     static SWEPT: Once = Once::new();
     SWEPT.call_once(|| sweep_leftover_containers(TEST_LABEL));
 
-    const SA_PASSWORD: &str = "yourStrong(!)Password";
     let container = expect_ok(
         GenericImage::new("mcr.microsoft.com/mssql/server", "2022-CU27-ubuntu-22.04")
             .with_wait_for(WaitFor::message_on_stdout(
@@ -69,7 +70,7 @@ async fn connect(
 
 pub(crate) async fn create_the_database(connection_string: &str, database_name: &str) {
     let mut client = connect(connection_string, None).await;
-    expect_ok(
+    let _execute_result = expect_ok(
         Query::new(format!("CREATE DATABASE [{database_name}]"))
             .execute(&mut client)
             .await,
@@ -83,7 +84,7 @@ pub(crate) async fn execute_in_the_database(
     sql: &str,
 ) {
     let mut client = connect(connection_string, Some(database_name)).await;
-    expect_ok(
+    let _execute_result = expect_ok(
         Query::new(sql).execute(&mut client).await,
         "failed to run setup statement",
     );
@@ -100,7 +101,7 @@ pub(crate) async fn set_whether_the_database_is_online(
     } else {
         format!("ALTER DATABASE [{database_name}] SET OFFLINE WITH ROLLBACK IMMEDIATE")
     };
-    expect_ok(
+    let _execute_result = expect_ok(
         Query::new(sql).execute(&mut client).await,
         "failed to change whether the database is online",
     );
