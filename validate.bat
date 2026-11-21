@@ -9,7 +9,7 @@ set SCRIPT=%~f0
 set PACKAGES=-p easy_db_migrator_rust
 set FEATURES=--features postgres,mssql
 set "FILTER=(tests[\\/])"
-set STEPS=13
+set STEPS=14
 set STEP_NUMBER=0
 set FAILED=0
 
@@ -24,8 +24,8 @@ set STEP=format
 set "COMMAND=cargo fmt %PACKAGES% --check"
 call :run_step
 
-set STEP=markdownlint
-set "COMMAND=docker run --rm -v "%CD%:/workdir" davidanson/markdownlint-cli2:latest "**/*.md" "#target/**""
+set STEP=markdown lint
+set "COMMAND=rumdl check ."
 call :run_step
 
 set STEP=spelling of the README
@@ -34,6 +34,10 @@ call :run_step
 
 set STEP=semgrep
 set "COMMAND=docker run --rm -v "%CD%:/src" semgrep/semgrep semgrep scan --config=auto --exclude=target --exclude=reports --error --quiet /src"
+call :run_step
+
+set STEP=github actions lint
+set "COMMAND=docker run --rm -v "%CD%:/repo" --workdir /repo rhysd/actionlint:latest -color"
 call :run_step
 
 set STEP=clippy

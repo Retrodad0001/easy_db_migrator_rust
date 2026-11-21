@@ -1,0 +1,130 @@
+name: CI
+
+# the same checks as validate.bat, apart from the HTML report
+on:
+  push:
+  pull_request:
+    branches: [main]
+  schedule:
+    # GitHub reads cron in UTC: every Friday at 23:30 UTC
+    - cron: "30 23 * * 5"
+  workflow_dispatch:
+
+env:
+  PACKAGES: -p easy_db_migrator_rust
+  FEATURES: --features postgres,mssql
+
+jobs:
+  validate:
+    # Linux on purpose: the integration tests start the Linux images of PostgreSQL
+    # and SQL Server with testcontainers, and a Windows runner has no Linux containers
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          components: rustfmt, clippy, llvm-tools-preview
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+
+      - name: Install cargo-audit and cargo-llvm-cov
+        uses: taiki-e/install-action@7572810d7dd469b651bb7793945692cf78da5dd7 # v2
+        with:
+          tool: cargo-audit@0.23.0,cargo-llvm-cov@0.9.1
+
+      - name: Install rumdl and typos
+        run: |
+          cargo install --locked rumdl --version 0.3.5
+          cargo install --locked typos-cli --version 1.52.2
+
+      # every check below runs even when an earlier one failed, as in validate.bat,
+      # and any failed check fails the job
+
+      - name: checking docker
+        if: ${{ !cancelled() }}
+        run: |
+          echo "BEGIN checking docker"
+          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END checking docker - passed"; else echo "END checking docker - FAILED"; fi' EXIT
+          docker info > /dev/null
+
+      - name: format
+        if: ${{ !cancelled() }}
+        run: |
+          echo "BEGIN format"
+          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END format - passed"; else echo "END format - FAILED"; fi' EXIT
+          cargo fmt $PACKAGES --check
+
+      - name: markdown lint
+        if: ${{ !cancelled() }}
+        run: |
+          echo "BEGIN markdown lint"
+          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END markdown lint - passed"; else echo "END markdown lint - FAILED"; fi' EXIT
+          rumdl check .
+
+      - name: spelling of the README
+        if: ${{ !cancelled() }}
+        run: |
+          echo "BEGIN spelling of the README"
+          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END spelling of the README - passed"; else echo "END spelling of the README - FAILED"; fi' EXIT
+          typos --locale en-us README.md
+
+      - name: semgrep
+        if: ${{ !cancelled() }}
+        run: |
+          echo "BEGIN semgrep"
+          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END semgrep - passed"; else echo "END semgrep - FAILED"; fi' EXIT
+          docker run --rm -v "${{ github.workspace }}:/src" semgrep/semgrep semgrep scan --config=auto --exclude=target --exclude=reports --error --quiet /src
+
+      # --release on purpose: the tests build in release, and a warning that only
+      # the release build raises must fail this step too
+      - name: clippy
+        if: ${{ !cancelled() }}
+        run: |
+          echo "BEGIN clippy"
+          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END clippy - passed"; else echo "END clippy - FAILED"; fi' EXIT
+          cargo clippy $PACKAGES --all-targets --release $FEATURES -- -D warnings
+
+      - name: cargo audit
+        if: ${{ !cancelled() }}
+        run: |
+          echo "BEGIN cargo audit"
+          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END cargo audit - passed"; else echo "END cargo audit - FAILED"; fi' EXIT
+          cargo audit --deny warnings
+
+      - name: unit tests
+        if: ${{ !cancelled() }}
+        run: |
+          echo "BEGIN unit tests"
+          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END unit tests - passed"; else echo "END unit tests - FAILED"; fi' EXIT
+          cargo test $PACKAGES --release --lib $FEATURES
+
+      - name: integration tests
+        if: ${{ !cancelled() }}
+        run: |
+          echo "BEGIN integration tests"
+          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END integration tests - passed"; else echo "END integration tests - FAILED"; fi' EXIT
+          cargo test $PACKAGES --release --test '*' $FEATURES
+
+      - name: doc tests
+        if: ${{ !cancelled() }}
+        run: |
+          echo "BEGIN doc tests"
+          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END doc tests - passed"; else echo "END doc tests - FAILED"; fi' EXIT
+          cargo test $PACKAGES --release --doc $FEATURES
+
+      # no --release on purpose: coverage needs an instrumented build, and an
+      # optimized build inlines code so its line numbers stop matching the source
+      - name: coverage of the integration tests
+        if: ${{ !cancelled() }}
+        run: |
+          echo "BEGIN coverage of the integration tests"
+          trap 'rc=$?; if [ "$rc" -eq 0 ]; then echo "END coverage of the integration tests - passed"; else echo "END coverage of the integration tests - FAILED"; fi' EXIT
+          cargo llvm-cov clean --workspace
+          cargo llvm-cov $PACKAGES --all-features --test integration_tests --ignore-filename-regex '(tests[\\/])' --show-missing-lines
